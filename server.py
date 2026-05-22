@@ -127,6 +127,7 @@ def _ensure_schema(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_dirsizes_path ON directory_sizes(path);
         CREATE INDEX IF NOT EXISTS idx_dirsizes_scan ON directory_sizes(scan_id);
+        CREATE INDEX IF NOT EXISTS idx_dirsizes_scan_path ON directory_sizes(scan_id, path);
 
         CREATE TABLE IF NOT EXISTS anomalies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,6 +281,17 @@ async def change_password(request: Request,
 
 
 # ---------------------------------------------------------------------------
+# Query helpers
+# ---------------------------------------------------------------------------
+
+def _child_patterns(parent_path: str) -> tuple[str, str]:
+    """Return (LIKE pattern, anti-pattern) matching only immediate children."""
+    p = parent_path.rstrip("/")
+    prefix = p + "/" if p else "/"
+    return (prefix + "%", prefix + "%/%")
+
+
+# ---------------------------------------------------------------------------
 # Dashboard & overview
 # ---------------------------------------------------------------------------
 
@@ -313,40 +325,37 @@ def overview(diskwatch_session: str | None = Cookie(default=None)):
             (root_path, cutoff_7d, scan_id)
         ).fetchone()
 
-        prev_sizes = {}
+        pattern, anti = _child_patterns(root_path)
+
         if prev_scan:
-            rows = conn.execute(
-                "SELECT path, size_bytes FROM directory_sizes WHERE scan_id=?",
-                (prev_scan["scan_id"],)
+            dirs = conn.execute(
+                """SELECT curr.path, curr.size_bytes, curr.file_count,
+                          prev.size_bytes AS prev_size_bytes
+                   FROM directory_sizes curr
+                   LEFT JOIN directory_sizes prev
+                     ON prev.scan_id = ? AND prev.path = curr.path
+                   WHERE curr.scan_id = ?
+                     AND curr.path LIKE ? AND curr.path NOT LIKE ?
+                   ORDER BY curr.size_bytes DESC""",
+                (prev_scan["scan_id"], scan_id, pattern, anti)
             ).fetchall()
-            prev_sizes = {r["path"]: r["size_bytes"] for r in rows}
+        else:
+            dirs = conn.execute(
+                """SELECT path, size_bytes, file_count, NULL AS prev_size_bytes
+                   FROM directory_sizes
+                   WHERE scan_id = ?
+                     AND path LIKE ? AND path NOT LIKE ?
+                   ORDER BY size_bytes DESC""",
+                (scan_id, pattern, anti)
+            ).fetchall()
 
-        # Top-level children of root_path
-        dirs = conn.execute(
-            """SELECT path, size_bytes, file_count FROM directory_sizes
-               WHERE scan_id=? AND path != ?
-               ORDER BY size_bytes DESC""",
-            (scan_id, root_path)
-        ).fetchall()
-
-        # Only immediate children
-        def is_immediate_child(parent, child):
-            p = parent.rstrip("/")
-            c = child.rstrip("/")
-            rel = os.path.relpath(c, p)
-            return "/" not in rel and rel != "."
-
-        top_dirs = []
-        for d in dirs:
-            if is_immediate_child(root_path, d["path"]):
-                prev_size = prev_sizes.get(d["path"])
-                change = None if prev_size is None else d["size_bytes"] - prev_size
-                top_dirs.append({
-                    "path": d["path"],
-                    "size_bytes": d["size_bytes"],
-                    "file_count": d["file_count"],
-                    "change_7d": change,
-                })
+        top_dirs = [{
+            "path": d["path"],
+            "size_bytes": d["size_bytes"],
+            "file_count": d["file_count"],
+            "change_7d": None if d["prev_size_bytes"] is None
+                         else d["size_bytes"] - d["prev_size_bytes"],
+        } for d in dirs]
 
         result.append({
             "root_path": root_path,
@@ -463,20 +472,6 @@ def tree(path: str, diskwatch_session: str | None = Cookie(default=None)):
         return []
 
     scan_id = latest["scan_id"]
-    all_rows = conn.execute(
-        "SELECT path, size_bytes, file_count FROM directory_sizes WHERE scan_id=?",
-        (scan_id,)
-    ).fetchall()
-
-    def is_immediate_child(parent, child):
-        p = parent.rstrip("/")
-        c = child.rstrip("/")
-        if p == c:
-            return False
-        rel = os.path.relpath(c, p)
-        return "/" not in rel and rel != "."
-
-    # 7-day comparison
     cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     prev = conn.execute(
         """SELECT scan_id FROM scans
@@ -484,27 +479,40 @@ def tree(path: str, diskwatch_session: str | None = Cookie(default=None)):
            ORDER BY timestamp DESC LIMIT 1""",
         (root_path, cutoff_7d)
     ).fetchone()
-    prev_sizes = {}
+
+    pattern, anti = _child_patterns(norm)
+
     if prev:
         rows = conn.execute(
-            "SELECT path, size_bytes FROM directory_sizes WHERE scan_id=?",
-            (prev["scan_id"],)
+            """SELECT curr.path, curr.size_bytes, curr.file_count,
+                      prev.size_bytes AS prev_size_bytes
+               FROM directory_sizes curr
+               LEFT JOIN directory_sizes prev
+                 ON prev.scan_id = ? AND prev.path = curr.path
+               WHERE curr.scan_id = ?
+                 AND curr.path LIKE ? AND curr.path NOT LIKE ?
+               ORDER BY curr.size_bytes DESC""",
+            (prev["scan_id"], scan_id, pattern, anti)
         ).fetchall()
-        prev_sizes = {r["path"]: r["size_bytes"] for r in rows}
+    else:
+        rows = conn.execute(
+            """SELECT path, size_bytes, file_count, NULL AS prev_size_bytes
+               FROM directory_sizes
+               WHERE scan_id = ?
+                 AND path LIKE ? AND path NOT LIKE ?
+               ORDER BY size_bytes DESC""",
+            (scan_id, pattern, anti)
+        ).fetchall()
 
-    children = []
-    for row in all_rows:
-        if is_immediate_child(norm, row["path"]):
-            prev_size = prev_sizes.get(row["path"])
-            children.append({
-                "path": row["path"],
-                "name": os.path.basename(row["path"]),
-                "size_bytes": row["size_bytes"],
-                "file_count": row["file_count"],
-                "change_7d": None if prev_size is None else row["size_bytes"] - prev_size,
-            })
+    children = [{
+        "path": r["path"],
+        "name": os.path.basename(r["path"]),
+        "size_bytes": r["size_bytes"],
+        "file_count": r["file_count"],
+        "change_7d": None if r["prev_size_bytes"] is None
+                     else r["size_bytes"] - r["prev_size_bytes"],
+    } for r in rows]
 
-    children.sort(key=lambda x: x["size_bytes"], reverse=True)
     conn.close()
     return children
 
@@ -567,26 +575,27 @@ def biggest_growers(days: int = 7, limit: int = 20,
         if latest["scan_id"] == earliest_in_period["scan_id"]:
             continue
 
-        latest_sizes = {r["path"]: r["size_bytes"] for r in conn.execute(
-            "SELECT path, size_bytes FROM directory_sizes WHERE scan_id=?",
-            (latest["scan_id"],)
-        ).fetchall()}
-        early_sizes = {r["path"]: r["size_bytes"] for r in conn.execute(
-            "SELECT path, size_bytes FROM directory_sizes WHERE scan_id=?",
-            (earliest_in_period["scan_id"],)
-        ).fetchall()}
+        rows = conn.execute(
+            """SELECT curr.path,
+                      curr.size_bytes AS current_size_bytes,
+                      prev.size_bytes AS previous_size_bytes,
+                      (curr.size_bytes - prev.size_bytes) AS growth_bytes
+               FROM directory_sizes curr
+               JOIN directory_sizes prev
+                 ON prev.scan_id = ? AND prev.path = curr.path
+               WHERE curr.scan_id = ?
+                 AND curr.size_bytes > prev.size_bytes""",
+            (earliest_in_period["scan_id"], latest["scan_id"])
+        ).fetchall()
 
-        for path, curr_size in latest_sizes.items():
-            if path in early_sizes:
-                growth = curr_size - early_sizes[path]
-                if growth > 0:
-                    results.append({
-                        "path": path,
-                        "root_path": root_path,
-                        "growth_bytes": growth,
-                        "current_size_bytes": curr_size,
-                        "previous_size_bytes": early_sizes[path],
-                    })
+        for r in rows:
+            results.append({
+                "path": r["path"],
+                "root_path": root_path,
+                "growth_bytes": r["growth_bytes"],
+                "current_size_bytes": r["current_size_bytes"],
+                "previous_size_bytes": r["previous_size_bytes"],
+            })
 
     results.sort(key=lambda x: x["growth_bytes"], reverse=True)
     conn.close()
