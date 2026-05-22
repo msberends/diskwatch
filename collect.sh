@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run as root via cron.
 # After the collector finishes, restores database file ownership to the
-# service user so the web server (running as uscloud) can read/write it.
+# service user so the web server can read/write it.
 # SQLite WAL mode creates .db-wal and .db-shm alongside the main db file;
-# all three must be uscloud-owned when the server accesses them.
+# all three must be owned by the service user when the server accesses them.
 set -uo pipefail
 
 INSTALL_DIR="__INSTALL_DIR__"

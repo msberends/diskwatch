@@ -59,7 +59,7 @@ fi
 
 # Pre-create the database file owned by the service user.
 # The collector runs as root and would otherwise create it as root-owned,
-# preventing the web server (uscloud) from reading it.
+# preventing the web server from reading it.
 if [[ ! -f "${INSTALL_DIR}/diskwatch.db" ]]; then
   echo "Pre-creating database file..."
   touch "${INSTALL_DIR}/diskwatch.db"

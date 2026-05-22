@@ -8,7 +8,7 @@ DiskWatch is a self-hosted webapp for tracking disk usage of your filesystems ov
 
 ## Installation
 
-**Requirements:** Python 3.10+, systemd, a user named `uscloud` (or edit `install.sh` and `diskwatch.service`).
+**Requirements:** Python 3.10+, systemd, a non-root service user (detected automatically from `$SUDO_USER` when running `sudo bash install.sh`).
 
 ```bash
 sudo bash install.sh
@@ -31,7 +31,7 @@ Run the collector wrapper manually as root to populate initial data:
 sudo /var/www/diskwatch/app/collect.sh
 ```
 
-`collect.sh` runs the collector as root (needed to read all directories), then restores ownership of the SQLite database files to `uscloud` so the web server can read them.
+`collect.sh` runs the collector as root (needed to read all directories), then restores ownership of the SQLite database files to the service user so the web server can read them.
 
 For a dry run (no database writes):
 
