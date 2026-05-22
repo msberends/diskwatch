@@ -1,5 +1,7 @@
 """DiskWatch FastAPI backend."""
 
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -68,31 +70,41 @@ def get_db() -> sqlite3.Connection:
 
 
 # ---------------------------------------------------------------------------
-# Session management
+# Session management — stateless HMAC-signed tokens
 # ---------------------------------------------------------------------------
+# Token format: "<expiry_unix_hex>.<hmac_sha256_hex>"
+# Signed with session_secret from config. Survives service restarts.
+# Logout is handled by deleting the cookie; the token itself expires naturally.
 
-_sessions: dict[str, datetime] = {}  # token -> expiry
+
+def _session_secret(cfg: dict) -> bytes:
+    return cfg.get("auth", {}).get("session_secret", "").encode()
 
 
 def create_session(cfg: dict) -> str:
-    token = secrets.token_hex(32)
     timeout_hours = cfg.get("auth", {}).get("session_timeout_hours", 72)
-    expiry = datetime.now(timezone.utc) + timedelta(hours=timeout_hours)
-    _sessions[token] = expiry
-    return token
+    expiry = int((datetime.now(timezone.utc) + timedelta(hours=timeout_hours)).timestamp())
+    expiry_hex = format(expiry, '016x')
+    sig = hmac.new(_session_secret(cfg), expiry_hex.encode(), hashlib.sha256).hexdigest()
+    return f"{expiry_hex}.{sig}"
 
 
 def validate_session(token: str) -> bool:
-    if not token or token not in _sessions:
+    if not token:
         return False
-    if datetime.now(timezone.utc) > _sessions[token]:
-        del _sessions[token]
+    try:
+        expiry_hex, sig = token.split('.', 1)
+    except ValueError:
         return False
-    return True
+    cfg = get_config()
+    expected = hmac.new(_session_secret(cfg), expiry_hex.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return False
+    return datetime.now(timezone.utc).timestamp() < int(expiry_hex, 16)
 
 
 def delete_session(token: str):
-    _sessions.pop(token, None)
+    pass  # cookie deletion handles logout
 
 
 # ---------------------------------------------------------------------------
@@ -391,11 +403,13 @@ def partitions(diskwatch_session: str | None = Cookie(default=None)):
                 pass
         total = meta.get("partition_total", 0)
         used = meta.get("partition_used", 0)
-        free = meta.get("partition_free", 0)
+        # macOS convention: available = total − used (ignores root-reserved blocks)
+        free = total - used if total > 0 else 0
         pct = round(used / total * 100, 1) if total > 0 else 0
         result.append({
             "root_path": root_path,
             "label": label,
+            "type": root_cfg.get("type", ""),
             "total_bytes": total,
             "used_bytes": used,
             "free_bytes": free,
@@ -515,6 +529,65 @@ def tree(path: str, diskwatch_session: str | None = Cookie(default=None)):
 
     conn.close()
     return children
+
+
+@app.get("/api/suggest")
+def suggest(path: str = "/", diskwatch_session: str | None = Cookie(default=None)):
+    """Return up to 15 immediate child directory paths matching the typed prefix."""
+    require_auth(diskwatch_session)
+
+    if not path or path == "/":
+        parent = "/"
+        partial = ""
+    elif path.endswith("/"):
+        parent = os.path.normpath(path)
+        partial = ""
+    else:
+        norm = os.path.normpath(path)
+        parent = os.path.dirname(norm)
+        partial = os.path.basename(norm)
+
+    cfg = get_config()
+    root_paths = [os.path.normpath(r["path"]) for r in cfg.get("scan", {}).get("roots", [])]
+    if not root_paths:
+        return []
+
+    conn = get_db()
+    results: set[str] = set()
+
+    for rp in root_paths:
+        covers = (parent == rp
+                  or (rp != "/" and parent.startswith(rp + "/"))
+                  or rp == "/")
+        if not covers:
+            continue
+        latest = conn.execute(
+            "SELECT scan_id FROM scans WHERE root_path=? ORDER BY timestamp DESC LIMIT 1",
+            (rp,)
+        ).fetchone()
+        if not latest:
+            continue
+        pattern, anti = _child_patterns(parent)
+        rows = conn.execute(
+            """SELECT path FROM directory_sizes
+               WHERE scan_id = ? AND path LIKE ? AND path NOT LIKE ?
+               ORDER BY path LIMIT 50""",
+            (latest["scan_id"], pattern, anti)
+        ).fetchall()
+        for r in rows:
+            name = os.path.basename(r["path"])
+            if not partial or name.lower().startswith(partial.lower()):
+                results.add(r["path"])
+
+    # Fallback: no DB match — suggest configured roots whose path starts with what was typed
+    if not results:
+        typed_norm = os.path.normpath(path) if path else "/"
+        for rp in root_paths:
+            if rp.startswith(typed_norm):
+                results.add(rp)
+
+    conn.close()
+    return sorted(results)[:15]
 
 
 @app.get("/api/trend")

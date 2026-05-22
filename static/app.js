@@ -7,9 +7,11 @@
 function formatBytes(n) {
   if (n == null) return '—';
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const mults = [1, 1e3, 1e6, 1e9, 1e12, 1e15];
   let i = 0;
-  let v = Math.abs(n);
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  const abs = Math.abs(n);
+  while (i < mults.length - 1 && abs >= mults[i + 1]) i++;
+  const v = abs / mults[i];
   return (n < 0 ? '-' : '') + v.toFixed(2).replace(/\.?0+$/, m => m === '.' ? '' : m) + ' ' + units[i];
 }
 
@@ -23,6 +25,28 @@ function formatBytesShort(n) {
   if (abs >= 1e6)  return sign + (abs / 1e6).toFixed(1) + ' MB';
   if (abs >= 1e3)  return sign + (abs / 1e3).toFixed(1) + ' KB';
   return sign + abs + ' B';
+}
+
+function parseSize(str) {
+  if (!str) return NaN;
+  const m = str.trim().match(/^([\d.]+)\s*(tb|gb|mb|kb|b)?$/i);
+  if (!m) return NaN;
+  const num = parseFloat(m[1]);
+  const mult = { b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12 };
+  return Math.round(num * (mult[(m[2] || 'b').toLowerCase()] ?? 1));
+}
+
+function bytesToHuman(n) {
+  if (!n) return '';
+  const units = ['TB', 'GB', 'MB', 'KB', 'B'];
+  const mults = [1e12, 1e9, 1e6, 1e3, 1];
+  for (let i = 0; i < units.length; i++) {
+    if (n >= mults[i]) {
+      const v = n / mults[i];
+      return (Number.isInteger(v) ? v : v.toFixed(1)) + ' ' + units[i];
+    }
+  }
+  return n + ' B';
 }
 
 function formatTs(iso) {
@@ -54,6 +78,10 @@ function esc(str) {
 
 function spinner() {
   return '<div class="dw-spinner-overlay"><div class="spinner-border text-accent" role="status"><span class="visually-hidden">Loading…</span></div></div>';
+}
+
+function tableSpinner(cols) {
+  return `<tr><td colspan="${cols}" class="text-center py-4">${spinner()}</td></tr>`;
 }
 
 function growthIndicator(bytes) {
@@ -335,11 +363,16 @@ async function renderDashboard(container) {
     const partitionCards = partitions.map(p => {
       const pct = p.used_percent || 0;
       const barCls = pct >= 85 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-success';
+      const typeBadge = p.type === 'local'
+        ? '<span class="badge bg-secondary me-1">local</span>'
+        : p.type === 'attached'
+          ? '<span class="badge bg-info text-dark me-1">attached</span>'
+          : '';
       return `
         <div class="col-12 col-sm-6 col-xl-3">
           <div class="card dw-partition-card h-100">
             <div class="card-body">
-              <div class="dw-partition-label mb-1">${esc(p.label)}</div>
+              <div class="d-flex align-items-center gap-1 mb-1">${typeBadge}<span class="dw-partition-label">${esc(p.label)}</span></div>
               <div class="dw-mono small text-muted mb-2">${esc(p.root_path)}</div>
               <div class="d-flex justify-content-between mb-1">
                 <span class="small">${formatBytesShort(p.used_bytes)} used</span>
@@ -560,13 +593,41 @@ async function renderBrowse(container, pathFromHash) {
   const targetPath = pathFromHash ? '/' + pathFromHash : '/';
   container.innerHTML = spinner();
 
+  let roots = [];
   try {
-    const settings = await GET('/api/settings');
+    const [settings, partitions] = await Promise.all([
+      GET('/api/settings'),
+      GET('/api/partitions'),
+    ]);
     _browseTrendDays = (settings.display && settings.display.default_time_range_days) || 90;
+    roots = partitions || [];
   } catch (_) {}
+
+  // If at '/' but '/' is not a configured root, redirect to first configured root
+  if (targetPath === '/' && roots.length > 0 && !roots.find(r => r.root_path === '/')) {
+    location.hash = '#/browse' + roots[0].root_path;
+    return;
+  }
+
+  // Find which root targetPath belongs to (longest prefix match wins)
+  const sortedRoots = [...roots].sort((a, b) => b.root_path.length - a.root_path.length);
+  const currentRoot = sortedRoots.find(r => {
+    const rp = r.root_path;
+    return targetPath === rp || targetPath.startsWith(rp === '/' ? '/' : rp + '/');
+  }) || roots[0] || { root_path: '/', label: '/ (root)' };
+
+  // Root picker: only shown when multiple roots are configured
+  const pickerHtml = roots.length > 1 ? `
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="small text-muted flex-shrink-0">Root:</span>
+      <select class="form-select form-select-sm dw-mono" id="browseRootPicker" style="width:auto;max-width:320px">
+        ${roots.map(r => `<option value="${esc(r.root_path)}"${r.root_path === currentRoot.root_path ? ' selected' : ''}>${esc(r.label || r.root_path)}</option>`).join('')}
+      </select>
+    </div>` : '';
 
   container.innerHTML = `
     <div class="mb-3">
+      ${pickerHtml}
       <nav aria-label="breadcrumb" class="dw-breadcrumb">
         <ol class="breadcrumb mb-0" id="browseBreadcrumb"></ol>
       </nav>
@@ -600,7 +661,7 @@ async function renderBrowse(container, pathFromHash) {
           </div>
           <div class="card-body p-2">
             <div id="browseTrendChart" class="dw-chart-container">
-              <div class="dw-chart-placeholder">Select a directory to view its trend</div>
+              <div class="dw-chart-placeholder">Click <i class="bi bi-graph-up-arrow"></i> on a directory to view its trend</div>
             </div>
             <div id="browseTrendSummary" class="text-muted small mt-1 text-center"></div>
           </div>
@@ -608,7 +669,14 @@ async function renderBrowse(container, pathFromHash) {
       </div>
     </div>`;
 
-  buildBreadcrumb(targetPath);
+  buildBreadcrumb(targetPath, currentRoot);
+
+  if (roots.length > 1) {
+    document.getElementById('browseRootPicker').addEventListener('change', e => {
+      const newRoot = e.target.value;
+      location.hash = '#/browse' + (newRoot === '/' ? '' : newRoot);
+    });
+  }
 
   document.getElementById('sortBySize').addEventListener('click', () => {
     _browseSort = 'size';
@@ -638,12 +706,23 @@ async function renderBrowse(container, pathFromHash) {
   renderTrendChart(targetPath);
 }
 
-function buildBreadcrumb(path) {
+function buildBreadcrumb(path, currentRoot) {
   const ol = document.getElementById('browseBreadcrumb');
   if (!ol) return;
-  const parts = path.split('/').filter(Boolean);
-  let html = `<li class="breadcrumb-item"><a href="#/browse">/ (root)</a></li>`;
-  let cumPath = '';
+  const rp = currentRoot.root_path;
+  const rawLabel = currentRoot.label || rp;
+  const rootLabel = rawLabel === '/' ? '/ (root)' : rawLabel;
+  const rootHash = '#/browse' + (rp === '/' ? '' : rp);
+
+  // Path relative to the current root
+  let relativePath = path;
+  if (rp !== '/' && path.startsWith(rp)) {
+    relativePath = path.slice(rp.length); // '' or '/subdir/...'
+  }
+
+  const parts = relativePath.split('/').filter(Boolean);
+  let html = `<li class="breadcrumb-item"><a href="${rootHash}">${esc(rootLabel)}</a></li>`;
+  let cumPath = rp === '/' ? '' : rp;
   for (let i = 0; i < parts.length; i++) {
     cumPath += '/' + parts[i];
     if (i === parts.length - 1) {
@@ -674,6 +753,7 @@ async function renderDirList(path) {
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-folder-fill text-accent flex-shrink-0"></i>
           <span class="dw-dir-name flex-grow-1" title="${esc(d.path)}">${esc(d.name)}</span>
+          <button class="btn btn-link btn-sm dw-trend-btn p-0 text-muted flex-shrink-0" title="Show trend"><i class="bi bi-graph-up-arrow"></i></button>
           <span class="dw-mono small text-end flex-shrink-0">${formatBytesShort(d.size_bytes)}</span>
         </div>
         <div class="d-flex justify-content-between mt-1">
@@ -687,16 +767,15 @@ async function renderDirList(path) {
     listEl.querySelectorAll('.dw-dir-item').forEach(el => {
       el.addEventListener('click', () => {
         const p = el.dataset.path;
-        // Single click: show trend + select
-        listEl.querySelectorAll('.dw-dir-item').forEach(e => e.classList.remove('selected'));
-        el.classList.add('selected');
-        renderTrendChart(p);
-      });
-      el.addEventListener('dblclick', () => {
-        // Double click: navigate into directory
-        const p = el.dataset.path;
         const hashPath = p.startsWith('/') ? p.slice(1) : p;
         location.hash = '#/browse/' + hashPath;
+      });
+      el.querySelector('.dw-trend-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        const p = el.dataset.path;
+        listEl.querySelectorAll('.dw-dir-item').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        renderTrendChart(p);
       });
     });
   } catch (e) {
@@ -796,7 +875,7 @@ async function renderAnomalies(container) {
             <th><input type="checkbox" id="ackSelectAll"></th>
             <th>Date</th><th>Path</th><th>Type</th><th>Details</th><th>Status</th><th></th>
           </tr></thead>
-          <tbody id="anomalyListBody">${spinner()}</tbody>
+          <tbody id="anomalyListBody">${tableSpinner(7)}</tbody>
         </table>
       </div>
     </div>`;
@@ -821,7 +900,7 @@ async function renderAnomalies(container) {
 async function loadAnomalyList() {
   const tbody = document.getElementById('anomalyListBody');
   if (!tbody) return;
-  tbody.innerHTML = spinner();
+  tbody.innerHTML = tableSpinner(7);
   _anomalySelected = new Set();
 
   let url = '/api/anomalies?limit=200';
@@ -895,7 +974,7 @@ async function renderAlerts(container) {
           <thead><tr>
             <th>Date</th><th>Rule</th><th>Path</th><th>Message</th><th>Channels</th><th>Status</th><th></th>
           </tr></thead>
-          <tbody id="alertListBody">${spinner()}</tbody>
+          <tbody id="alertListBody">${tableSpinner(7)}</tbody>
         </table>
       </div>
     </div>`;
@@ -912,7 +991,7 @@ async function renderAlerts(container) {
 async function loadAlertList() {
   const tbody = document.getElementById('alertListBody');
   if (!tbody) return;
-  tbody.innerHTML = spinner();
+  tbody.innerHTML = tableSpinner(7);
 
   let url = '/api/alerts?limit=200';
   if (_alertFilter.acknowledged !== '') url += `&acknowledged=${_alertFilter.acknowledged}`;
@@ -970,9 +1049,9 @@ async function renderScans(container) {
       <div class="card-body p-0">
         <table class="table dw-table mb-0">
           <thead><tr>
-            <th>Timestamp</th><th>Root</th><th>Duration</th><th>Directories</th><th>Total Size</th><th>Errors</th>
+            <th>Timestamp</th><th>Root</th><th>Duration</th><th>Directories</th><th>Dirs/min</th><th>Total Size</th><th>Errors</th>
           </tr></thead>
-          <tbody id="scanListBody">${spinner()}</tbody>
+          <tbody id="scanListBody">${tableSpinner(7)}</tbody>
         </table>
       </div>
       <div class="card-footer d-flex justify-content-between align-items-center py-2" id="scanPagination" style="display:none!important"></div>
@@ -996,7 +1075,7 @@ async function loadScanList() {
   const tbody = document.getElementById('scanListBody');
   const pagination = document.getElementById('scanPagination');
   if (!tbody) return;
-  tbody.innerHTML = spinner();
+  tbody.innerHTML = tableSpinner(6);
 
   try {
     const data = await GET(`/api/scans?limit=${_scanPageSize}&offset=${_scanOffset}`);
@@ -1004,7 +1083,7 @@ async function loadScanList() {
     const rows = data.scans;
 
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No scans recorded yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No scans recorded yet</td></tr>';
       return;
     }
 
@@ -1015,11 +1094,15 @@ async function loadScanList() {
       const errCell = errCount > 0
         ? `<button class="btn btn-sm btn-outline-danger" onclick="showScanErrors(${JSON.stringify(JSON.stringify(errors))})">${errCount} error${errCount !== 1 ? 's' : ''}</button>`
         : '<span class="text-muted">—</span>';
+      const dirs = s.directories_counted || 0;
+      const secs = s.duration_seconds || 0;
+      const dirsPerMin = secs > 0 ? Math.round(dirs / (secs / 60)).toLocaleString() : '—';
       return `<tr>
         <td class="dw-mono small">${formatTs(s.timestamp)}</td>
         <td><span class="badge bg-secondary">${esc(s.label || s.root_path)}</span></td>
         <td class="dw-mono small">${formatDuration(s.duration_seconds)}</td>
-        <td class="dw-mono small">${(s.directories_counted || 0).toLocaleString()}</td>
+        <td class="dw-mono small">${dirs.toLocaleString()}</td>
+        <td class="dw-mono small">${dirsPerMin}</td>
         <td class="dw-mono small">${formatBytesShort(s.total_size_bytes)}</td>
         <td>${errCell}</td>
       </tr>`;
@@ -1038,7 +1121,7 @@ async function loadScanList() {
       document.getElementById('scanNext').addEventListener('click', () => { _scanOffset += _scanPageSize; loadScanList(); });
     }
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="alert alert-danger m-2">${esc(e.message)}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="alert alert-danger m-2">${esc(e.message)}</div></td></tr>`;
   }
 }
 
@@ -1176,8 +1259,12 @@ async function renderSettings(container) {
                     `<option ${(_settings.ntfy?.priority ?? 'default') === p ? 'selected' : ''}>${p}</option>`
                   ).join('')}
                 </select></div>
-              <div class="col-md-8"><label class="form-label">Auth Token (optional)</label>
+              <div class="col-md-8"><label class="form-label">Auth Token <span class="text-muted small">(use token <em>or</em> username/password)</span></label>
                 <input type="password" class="form-control" id="cfgNtfyToken" value="${esc(_settings.ntfy?.auth_token ?? '')}" /></div>
+              <div class="col-md-6"><label class="form-label">Username</label>
+                <input type="text" class="form-control" id="cfgNtfyUsername" value="${esc(_settings.ntfy?.username ?? '')}" autocomplete="off" /></div>
+              <div class="col-md-6"><label class="form-label">Password</label>
+                <input type="password" class="form-control" id="cfgNtfyPassword" value="${esc(_settings.ntfy?.password ?? '')}" /></div>
             </div>
             <div class="mt-3 d-flex gap-2">
               <button class="btn btn-accent btn-sm" onclick="saveSection('ntfy')">Save ntfy</button>
@@ -1269,6 +1356,18 @@ async function renderSettings(container) {
             <input type="text" class="form-control dw-mono" id="rootModalPath" placeholder="/mnt/data" /></div>
           <div class="mb-3"><label class="form-label">Label</label>
             <input type="text" class="form-control" id="rootModalLabel" placeholder="My Drive" /></div>
+          <div class="mb-3"><label class="form-label">Drive type</label>
+            <div class="d-flex gap-4">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="rootDriveType" id="rootTypeLocal" value="local">
+                <label class="form-check-label" for="rootTypeLocal">Local <span class="text-muted small">(main system drive — one only)</span></label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="rootDriveType" id="rootTypeAttached" value="attached">
+                <label class="form-check-label" for="rootTypeAttached">Attached <span class="text-muted small">(external / mounted)</span></label>
+              </div>
+            </div>
+          </div>
           <div class="mb-3"><label class="form-label">Excludes (one path per line)</label>
             <textarea class="form-control dw-mono" id="rootModalExcludes" rows="4" placeholder="/proc&#10;/sys"></textarea></div>
         </div>
@@ -1294,8 +1393,8 @@ async function renderSettings(container) {
               <option value="absolute_growth">Absolute growth</option>
               <option value="usage_percent">Disk usage %</option>
             </select></div>
-          <div id="ruleThresholdBytes" class="mb-3"><label class="form-label">Threshold (bytes)</label>
-            <input type="number" class="form-control" id="ruleModalThresholdBytes" min="1" /></div>
+          <div id="ruleThresholdBytes" class="mb-3"><label class="form-label">Threshold</label>
+            <input type="text" class="form-control" id="ruleModalThresholdBytes" placeholder="e.g. 5 GB, 500 MB, 2 TB" /></div>
           <div id="ruleThresholdPct" class="mb-3 d-none"><label class="form-label">Threshold (%)</label>
             <input type="number" class="form-control" id="ruleModalThresholdPct" min="1" max="100" /></div>
           <div id="rulePeriodRow" class="mb-3"><label class="form-label">Period (days)</label>
@@ -1334,16 +1433,133 @@ function renderRootsList() {
     el.innerHTML = '<div class="text-muted small py-2">No scan roots configured.</div>';
     return;
   }
-  el.innerHTML = roots.map((r, i) => `
-    <div class="dw-root-item">
-      <i class="bi bi-hdd text-accent flex-shrink-0"></i>
+
+  const indexed = roots.map((r, i) => ({ ...r, _idx: i }));
+  const local    = indexed.filter(r => r.type === 'local');
+  const attached = indexed.filter(r => r.type === 'attached');
+  const untyped  = indexed.filter(r => r.type !== 'local' && r.type !== 'attached');
+
+  function rootItem(r, icon) {
+    const excl = (r.exclude || []).length;
+    return `<div class="dw-root-item">
+      <i class="bi ${icon} text-accent flex-shrink-0"></i>
       <div class="flex-grow-1 overflow-hidden">
         <div class="dw-mono">${esc(r.path)}</div>
-        <div class="small text-muted">${esc(r.label || '')} — ${(r.exclude || []).length} exclude(s)</div>
+        <div class="small text-muted">${r.label ? esc(r.label) + ' — ' : ''}${excl} exclude${excl !== 1 ? 's' : ''}</div>
       </div>
-      <button class="btn btn-sm btn-outline-secondary flex-shrink-0" onclick="openRootModal(${i})"><i class="bi bi-pencil"></i></button>
-      <button class="btn btn-sm btn-outline-danger flex-shrink-0" onclick="removeRoot(${i})"><i class="bi bi-trash"></i></button>
-    </div>`).join('');
+      <button class="btn btn-sm btn-outline-secondary flex-shrink-0" onclick="openRootModal(${r._idx})"><i class="bi bi-pencil"></i></button>
+      <button class="btn btn-sm btn-outline-danger flex-shrink-0" onclick="removeRoot(${r._idx})"><i class="bi bi-trash"></i></button>
+    </div>`;
+  }
+
+  let html = '';
+
+  if (local.length === 0) {
+    html += '<div class="alert alert-warning small py-2 mb-2">No <strong>Local</strong> drive configured. Edit a root and set its type to Local.</div>';
+  } else if (local.length > 1) {
+    html += '<div class="alert alert-warning small py-2 mb-2">More than one <strong>Local</strong> drive is configured — there should be exactly one.</div>';
+  }
+
+  if (local.length > 0) {
+    html += '<div class="small fw-medium text-muted mb-1">Local Drive</div>';
+    html += local.map(r => rootItem(r, 'bi-hdd-fill')).join('');
+  }
+
+  if (attached.length > 0) {
+    html += `<div class="small fw-medium text-muted mb-1 ${local.length ? 'mt-3' : ''}">Attached Drives</div>`;
+    html += attached.map(r => rootItem(r, 'bi-hdd')).join('');
+  }
+
+  if (untyped.length > 0) {
+    html += `<div class="small fw-medium text-muted mb-1 ${local.length || attached.length ? 'mt-3' : ''}">Unclassified</div>`;
+    html += untyped.map(r => rootItem(r, 'bi-hdd')).join('');
+  }
+
+  el.innerHTML = html;
+}
+
+function attachPathAutocomplete(input) {
+  if (input.dataset.pathComplete) return;
+  input.dataset.pathComplete = '1';
+
+  let dropdown = null;
+  let debounceTimer = null;
+  let activeIdx = -1;
+
+  function removeDropdown() {
+    if (dropdown) { dropdown.remove(); dropdown = null; }
+    activeIdx = -1;
+  }
+
+  function positionDropdown() {
+    if (!dropdown) return;
+    const r = input.getBoundingClientRect();
+    dropdown.style.top   = (r.bottom + window.scrollY) + 'px';
+    dropdown.style.left  = (r.left   + window.scrollX) + 'px';
+    dropdown.style.width = r.width + 'px';
+  }
+
+  function showSuggestions(suggestions) {
+    removeDropdown();
+    if (!suggestions.length) return;
+    dropdown = document.createElement('div');
+    dropdown.className = 'list-group shadow';
+    dropdown.style.cssText = 'position:absolute;z-index:9999;max-height:200px;overflow-y:auto;';
+    suggestions.forEach(path => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'list-group-item list-group-item-action dw-mono small py-1 px-2 border-0';
+      item.textContent = path;
+      item.addEventListener('mousedown', e => {
+        e.preventDefault();
+        input.value = path + '/';
+        input.focus();
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => fetchSuggestions(input.value), 0);
+      });
+      dropdown.appendChild(item);
+    });
+    document.body.appendChild(dropdown);
+    positionDropdown();
+  }
+
+  async function fetchSuggestions(val) {
+    if (!val) { removeDropdown(); return; }
+    try {
+      const results = await GET('/api/suggest?path=' + encodeURIComponent(val));
+      if (document.activeElement === input) showSuggestions(results || []);
+    } catch (_) { removeDropdown(); }
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => fetchSuggestions(input.value), 180);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (!dropdown) return;
+    const items = [...dropdown.querySelectorAll('button')];
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      items.forEach((b, i) => b.classList.toggle('active', i === activeIdx));
+      if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      items.forEach((b, i) => b.classList.toggle('active', i === activeIdx));
+      if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && activeIdx >= 0) {
+      e.preventDefault();
+      items[activeIdx].dispatchEvent(new MouseEvent('mousedown'));
+    } else if (e.key === 'Escape') {
+      removeDropdown();
+    }
+  });
+
+  input.addEventListener('blur', () => setTimeout(removeDropdown, 150));
+  window.addEventListener('scroll', positionDropdown, { passive: true });
+  window.addEventListener('resize', positionDropdown, { passive: true });
 }
 
 function openRootModal(idx) {
@@ -1351,17 +1567,26 @@ function openRootModal(idx) {
   const r = idx >= 0 ? roots[idx] : {};
   document.getElementById('rootModalTitle').textContent = idx >= 0 ? 'Edit Scan Root' : 'Add Scan Root';
   document.getElementById('rootModalPath').value     = r.path || '';
+  attachPathAutocomplete(document.getElementById('rootModalPath'));
   document.getElementById('rootModalLabel').value    = r.label || '';
   document.getElementById('rootModalExcludes').value = (r.exclude || []).join('\n');
+
+  // Default type for new roots: local if none exists yet, otherwise attached
+  const hasLocal = roots.some((x, i) => i !== idx && x.type === 'local');
+  const driveType = r.type || (hasLocal ? 'attached' : 'local');
+  document.getElementById('rootTypeLocal').checked    = driveType === 'local';
+  document.getElementById('rootTypeAttached').checked = driveType !== 'local';
+
   const modal = new bootstrap.Modal(document.getElementById('rootModal'));
   document.getElementById('rootModalSave').onclick = () => {
     const path  = document.getElementById('rootModalPath').value.trim();
     const label = document.getElementById('rootModalLabel').value.trim();
     const excl  = document.getElementById('rootModalExcludes').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const type  = document.getElementById('rootTypeLocal').checked ? 'local' : 'attached';
     if (!path) { showToast('Path is required', 'danger'); return; }
     _settings.scan = _settings.scan || {};
     _settings.scan.roots = _settings.scan.roots || [];
-    const entry = { path, label, exclude: excl };
+    const entry = { path, label, type, exclude: excl };
     if (idx >= 0) _settings.scan.roots[idx] = entry;
     else _settings.scan.roots.push(entry);
     renderRootsList();
@@ -1405,9 +1630,10 @@ function openRuleModal(idx) {
   document.getElementById('ruleModalTitle').textContent = idx >= 0 ? 'Edit Alert Rule' : 'Add Alert Rule';
   document.getElementById('ruleModalName').value  = r.name || '';
   document.getElementById('ruleModalPath').value  = r.path || '';
+  attachPathAutocomplete(document.getElementById('ruleModalPath'));
   const type = r.type || 'absolute_growth';
   document.getElementById('ruleModalType').value  = type;
-  document.getElementById('ruleModalThresholdBytes').value = r.threshold_bytes || '';
+  document.getElementById('ruleModalThresholdBytes').value = r.threshold_bytes ? bytesToHuman(r.threshold_bytes) : '';
   document.getElementById('ruleModalThresholdPct').value   = r.threshold_percent || '';
   document.getElementById('ruleModalPeriod').value         = r.period_days || 7;
   document.getElementById('ruleNotifyNtfy').checked  = (r.notify || []).includes('ntfy');
@@ -1428,7 +1654,9 @@ function openRuleModal(idx) {
     if (document.getElementById('ruleNotifyEmail').checked) notify.push('email');
     const entry = { name, path, type: ruleType, notify };
     if (ruleType === 'absolute_growth') {
-      entry.threshold_bytes = parseInt(document.getElementById('ruleModalThresholdBytes').value) || 0;
+      const sizeVal = parseSize(document.getElementById('ruleModalThresholdBytes').value);
+      if (isNaN(sizeVal) || sizeVal <= 0) { showToast('Enter a valid threshold, e.g. 5 GB or 500 MB', 'danger'); return; }
+      entry.threshold_bytes = sizeVal;
       entry.period_days     = parseInt(document.getElementById('ruleModalPeriod').value) || 7;
     } else {
       entry.threshold_percent = parseFloat(document.getElementById('ruleModalThresholdPct').value) || 0;
@@ -1474,6 +1702,8 @@ async function saveSection(section) {
       topic:      document.getElementById('cfgNtfyTopic').value.trim(),
       priority:   document.getElementById('cfgNtfyPriority').value,
       auth_token: document.getElementById('cfgNtfyToken').value,
+      username:   document.getElementById('cfgNtfyUsername').value.trim(),
+      password:   document.getElementById('cfgNtfyPassword').value,
     };
   } else if (section === 'display') {
     const theme = document.getElementById('cfgTheme').value;

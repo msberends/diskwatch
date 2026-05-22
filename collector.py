@@ -220,7 +220,7 @@ def evaluate_alerts(conn: sqlite3.Connection, config: dict, scan_id: int,
 
     triggered = []
     for rule in rules:
-        path = rule.get("path", "")
+        path = os.path.normpath(rule.get("path", "") or "/")
         rule_type = rule.get("type", "")
         notify = rule.get("notify", [])
         name = rule.get("name", "unnamed")

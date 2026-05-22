@@ -12,6 +12,7 @@ scan:
   roots:
     - path: /
       label: "Root filesystem"
+      type: local          # "local" for the main system drive (exactly one), "attached" for mounted drives
       exclude:
         - /proc
         - /sys
@@ -19,9 +20,10 @@ scan:
         - /run
         - /snap
         - /tmp
-    # Add additional mount points as needed, for example:
+    # Add attached drives as needed, for example:
     # - path: /mnt/backup
     #   label: "Backup Drive"
+    #   type: attached
     #   exclude: []
 
 # Data retention
@@ -47,6 +49,8 @@ ntfy:
   topic: ""
   priority: "default"
   auth_token: ""
+  username: ""
+  password: ""
 
 # Alert rules
 alerts:

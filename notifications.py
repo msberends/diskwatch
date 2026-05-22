@@ -1,6 +1,5 @@
 """Email and ntfy notification utilities for DiskWatch."""
 
-import json
 import smtplib
 import urllib.request
 import urllib.error
@@ -18,25 +17,28 @@ def send_ntfy(config: dict, title: str, message: str) -> tuple[bool, str]:
     topic = ntfy.get("topic", "")
     priority = ntfy.get("priority", "default")
     auth_token = ntfy.get("auth_token", "")
+    username = ntfy.get("username", "")
+    password = ntfy.get("password", "")
 
     if not topic:
         return False, "ntfy topic is not configured"
 
     url = f"{server_url}/{topic}"
-    payload = json.dumps({
-        "topic": topic,
-        "message": message,
-        "title": title,
-        "priority": priority,
-    }).encode("utf-8")
-
     req = urllib.request.Request(
         url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
+        data=message.encode("utf-8"),
+        headers={
+            "Title": title,
+            "Priority": priority,
+            "Content-Type": "text/plain; charset=utf-8",
+        },
         method="POST",
     )
-    if auth_token:
+    if username:
+        import base64
+        creds = base64.b64encode(f"{username}:{password}".encode()).decode()
+        req.add_header("Authorization", f"Basic {creds}")
+    elif auth_token:
         req.add_header("Authorization", f"Bearer {auth_token}")
 
     try:
