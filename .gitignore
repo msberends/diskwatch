@@ -1,5 +1,5 @@
-# Live installation directory — contains venv, live config, and database
-app/
+# Instance directory — contains venv, live config, and database (not source code)
+instance/
 
 # Python
 __pycache__/
@@ -29,7 +29,7 @@ Thumbs.db
 *.swo
 *~
 
-# Generated service file (contains server-specific paths; see diskwatch.service.example)
+# Generated files (contain server-specific paths substituted at install time)
 diskwatch.service
 
 # Claude Code workspace

@@ -5,10 +5,10 @@ After=network.target
 [Service]
 Type=simple
 User=__SERVICE_USER__
-WorkingDirectory=__INSTALL_DIR__
-Environment=DB_PATH=__INSTALL_DIR__/diskwatch.db
-Environment=CONFIG_PATH=__INSTALL_DIR__/config.yaml
-ExecStart=__INSTALL_DIR__/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8070
+WorkingDirectory=__REPO_DIR__
+Environment=DB_PATH=__DATA_DIR__/diskwatch.db
+Environment=CONFIG_PATH=__DATA_DIR__/config.yaml
+ExecStart=__DATA_DIR__/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8070
 Restart=on-failure
 RestartSec=5
 

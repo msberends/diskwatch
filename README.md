@@ -10,16 +10,22 @@ DiskWatch is a self-hosted webapp for tracking disk usage of your filesystems ov
 
 **Requirements:** Python 3.10+, systemd, a non-root service user (detected automatically from `$SUDO_USER` when running `sudo bash install.sh`).
 
+Clone the repository to your desired location, then run the installer as root:
+
 ```bash
+git clone https://github.com/msberends/diskwatch /var/www/diskwatch
+cd /var/www/diskwatch
 sudo bash install.sh
 ```
 
 The installer:
-- Creates `/var/www/diskwatch/app/` with a Python virtualenv.
-- Installs dependencies from `requirements.txt`.
-- Copies all app files into place.
+- Creates an `instance/` directory inside the repo for the virtualenv, config, and database.
+- Installs Python dependencies into the virtualenv.
 - Writes a default `config.yaml` if none exists.
+- Generates `instance/collect.sh` with the correct paths.
 - Installs and enables the `diskwatch` systemd service.
+
+The source files run directly from the repo — no copying. To update, `git pull` and restart the service.
 
 ---
 
@@ -28,7 +34,7 @@ The installer:
 Run the collector wrapper manually as root to populate initial data:
 
 ```bash
-sudo /var/www/diskwatch/app/collect.sh
+sudo /var/www/diskwatch/instance/collect.sh
 ```
 
 `collect.sh` runs the collector as root (needed to read all directories), then restores ownership of the SQLite database files to the service user so the web server can read them.
@@ -36,7 +42,7 @@ sudo /var/www/diskwatch/app/collect.sh
 For a dry run (no database writes):
 
 ```bash
-sudo /var/www/diskwatch/app/collect.sh --dry-run
+sudo /var/www/diskwatch/instance/collect.sh --dry-run
 ```
 
 ---
@@ -46,7 +52,7 @@ sudo /var/www/diskwatch/app/collect.sh --dry-run
 Add to **root's** crontab (`sudo crontab -e`) to run daily at 04:00:
 
 ```
-0 4 * * * /var/www/diskwatch/app/collect.sh >> /var/log/diskwatch-collector.log 2>&1
+0 4 * * * /var/www/diskwatch/instance/collect.sh >> /var/log/diskwatch-collector.log 2>&1
 ```
 
 ---
@@ -61,7 +67,7 @@ On first visit, you will be prompted to set the admin password. After that, all 
 
 ## Configuration reference
 
-All settings are editable via the **Settings** view in the UI. The config file lives at `/var/www/diskwatch/app/config.yaml`.
+All settings are editable via the **Settings** view in the UI. The config file lives at `instance/config.yaml` inside the repo directory.
 
 | Section | Key | Description |
 |---------|-----|-------------|

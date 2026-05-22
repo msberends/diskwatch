@@ -21,8 +21,9 @@ from notifications import send_email, send_ntfy
 # Paths (overridable via environment)
 # ---------------------------------------------------------------------------
 
-CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "/var/www/diskwatch/app/config.yaml"))
-DB_PATH = Path(os.environ.get("DB_PATH", "/var/www/diskwatch/app/diskwatch.db"))
+_instance = Path(__file__).parent / "instance"
+CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", _instance / "config.yaml"))
+DB_PATH = Path(os.environ.get("DB_PATH", _instance / "diskwatch.db"))
 STATIC_DIR = Path(__file__).parent / "static"
 
 # ---------------------------------------------------------------------------

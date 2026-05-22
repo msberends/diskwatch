@@ -9,13 +9,14 @@ import sqlite3
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import yaml
 
 from notifications import send_notification
 
-DEFAULT_CONFIG = "/var/www/diskwatch/app/config.yaml"
-DEFAULT_DB = "/var/www/diskwatch/app/diskwatch.db"
+DEFAULT_CONFIG = str(Path(__file__).parent / "instance" / "config.yaml")
+DEFAULT_DB = str(Path(__file__).parent / "instance" / "diskwatch.db")
 
 GROWTH_SPIKE_MIN_BYTES = 100 * 1024 * 1024   # 100 MB
 GROWTH_SPIKE_MIN_RATIO = 0.20                 # 20%
