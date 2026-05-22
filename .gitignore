@@ -1,0 +1,39 @@
+# Live installation directory — contains venv, live config, and database
+app/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Secrets / local config
+.env
+*.env.*
+secrets.yaml
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Generated service file (contains server-specific paths; see diskwatch.service.example)
+diskwatch.service
+
+# Claude Code workspace
+.claude/
+
+# Internal dev spec (not needed by end users)
+instructions.md

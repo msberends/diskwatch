@@ -1,0 +1,337 @@
+/* ============================================================
+   DiskWatch — custom styles on top of Bootstrap 5
+   ============================================================ */
+
+/* --- Fonts & base --- */
+:root {
+  --dw-accent: #2ec4b6;
+  --dw-accent-hover: #26a69a;
+  --dw-sidebar-width: 220px;
+  --dw-topbar-height: 48px;
+  --dw-mobile-topbar-height: 52px;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+  --font-ui: "DM Sans", system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-ui);
+  overflow-x: hidden;
+}
+
+/* --- Accent colour utilities --- */
+.text-accent { color: var(--dw-accent) !important; }
+
+.btn-accent {
+  background-color: var(--dw-accent);
+  border-color: var(--dw-accent);
+  color: #000;
+  font-weight: 600;
+}
+.btn-accent:hover, .btn-accent:focus {
+  background-color: var(--dw-accent-hover);
+  border-color: var(--dw-accent-hover);
+  color: #000;
+}
+
+/* ============================================================
+   Layout: sidebar + main
+   ============================================================ */
+
+/* Desktop: sidebar fixed left, main offset right */
+@media (min-width: 768px) {
+  .dw-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--dw-sidebar-width);
+    height: 100vh;
+    z-index: 1000;
+    background: var(--bs-body-bg);
+    border-right: 1px solid var(--bs-border-color);
+    overflow-y: auto;
+  }
+
+  .dw-main {
+    margin-left: var(--dw-sidebar-width);
+    min-height: 100vh;
+  }
+
+  .dw-mobile-topbar { display: none !important; }
+}
+
+/* Mobile: sidebar hidden (offcanvas); main takes full width */
+@media (max-width: 767.98px) {
+  .dw-sidebar { display: none !important; }
+  .dw-main { margin-left: 0; padding-top: var(--dw-mobile-topbar-height); }
+  .dw-mobile-topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    background: var(--bs-body-bg);
+    border-bottom: 1px solid var(--bs-border-color);
+    height: var(--dw-mobile-topbar-height);
+  }
+}
+
+/* --- Sidebar brand / nav --- */
+.dw-sidebar-brand {
+  height: var(--dw-topbar-height);
+}
+
+.dw-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dw-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--bs-body-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+}
+.dw-nav-link:hover {
+  background: var(--bs-secondary-bg);
+  color: var(--dw-accent);
+}
+.dw-nav-link.active {
+  background: color-mix(in srgb, var(--dw-accent) 15%, transparent);
+  color: var(--dw-accent);
+}
+.dw-nav-link i { font-size: 1rem; width: 1.1rem; flex-shrink: 0; }
+
+/* --- Top bar (desktop) --- */
+.dw-topbar {
+  height: var(--dw-topbar-height);
+  border-bottom: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+/* --- Offcanvas sidebar (mobile) --- */
+.dw-offcanvas {
+  background: var(--bs-body-bg);
+  width: var(--dw-sidebar-width) !important;
+}
+
+/* --- Content area --- */
+.dw-content {
+  max-width: 1400px;
+}
+
+/* ============================================================
+   Login overlay
+   ============================================================ */
+.dw-login-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bs-body-bg);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dw-login-card {
+  width: 100%;
+  max-width: 380px;
+}
+
+/* ============================================================
+   Monospace data display
+   ============================================================ */
+.dw-mono, .dw-size, .dw-path {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+/* ============================================================
+   Partition usage cards
+   ============================================================ */
+.dw-partition-card .progress {
+  height: 8px;
+  border-radius: 4px;
+}
+.dw-partition-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bs-secondary-color);
+}
+
+/* ============================================================
+   Directory listing (Browse view)
+   ============================================================ */
+.dw-dir-item {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.dw-dir-item:hover {
+  background: var(--bs-secondary-bg);
+}
+.dw-dir-item.selected {
+  background: color-mix(in srgb, var(--dw-accent) 12%, transparent);
+  border-left: 3px solid var(--dw-accent);
+}
+.dw-dir-name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dw-growth-up   { color: #dc3545; }
+.dw-growth-down { color: #198754; }
+.dw-growth-flat { color: var(--bs-secondary-color); }
+
+/* ============================================================
+   Breadcrumb
+   ============================================================ */
+.dw-breadcrumb .breadcrumb-item a {
+  color: var(--dw-accent);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.dw-breadcrumb .breadcrumb-item.active {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+/* ============================================================
+   Charts
+   ============================================================ */
+.dw-chart-container {
+  width: 100%;
+  min-height: 320px;
+}
+.dw-chart-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+.dw-table th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+}
+.dw-table td {
+  font-size: 0.875rem;
+  vertical-align: middle;
+}
+.dw-table .dw-path {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   Badges
+   ============================================================ */
+.dw-badge {
+  font-size: 0.65rem;
+  min-width: 1.4em;
+  border-radius: 9999px;
+}
+
+/* ============================================================
+   Loading spinner overlay
+   ============================================================ */
+.dw-spinner-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+/* ============================================================
+   Settings accordion
+   ============================================================ */
+.dw-settings .accordion-button {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.dw-settings .form-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color);
+}
+.dw-settings .form-control,
+.dw-settings .form-select {
+  font-size: 0.875rem;
+}
+
+/* Scan root / alert rule list items in settings */
+.dw-rule-item, .dw-root-item {
+  background: var(--bs-secondary-bg);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+}
+.dw-rule-item .dw-mono, .dw-root-item .dw-mono {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   Overview stat cards
+   ============================================================ */
+.dw-stat-card .card-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bs-secondary-color);
+  margin-bottom: 4px;
+}
+.dw-stat-card .dw-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--dw-accent);
+  line-height: 1.2;
+}
+.dw-stat-card .dw-stat-sub {
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color);
+  margin-top: 2px;
+}
+
+/* ============================================================
+   Misc
+   ============================================================ */
+.dw-section-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+/* Make error modals / toasts readable */
+.toast-body { font-size: 0.875rem; }

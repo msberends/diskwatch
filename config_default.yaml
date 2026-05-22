@@ -1,0 +1,73 @@
+# DiskWatch default configuration
+# Copy to <install_dir>/config.yaml and edit as needed.
+
+# Authentication
+auth:
+  password_hash: ""        # bcrypt hash; set via UI on first login or via CLI
+  session_secret: ""       # auto-generated on first run if empty
+  session_timeout_hours: 72
+
+# Scan settings
+scan:
+  roots:
+    - path: /
+      label: "Root filesystem"
+      exclude:
+        - /proc
+        - /sys
+        - /dev
+        - /run
+        - /snap
+        - /tmp
+    # Add additional mount points as needed, for example:
+    # - path: /mnt/backup
+    #   label: "Backup Drive"
+    #   exclude: []
+
+# Data retention
+retention:
+  keep_days: 365
+  cleanup_after_scan: true
+
+# Notification: email
+email:
+  enabled: false
+  smtp_host: ""
+  smtp_port: 587
+  smtp_tls: true
+  smtp_user: ""
+  smtp_password: ""
+  from_address: ""
+  to_addresses: []
+
+# Notification: ntfy
+ntfy:
+  enabled: false
+  server_url: "https://ntfy.sh"
+  topic: ""
+  priority: "default"
+  auth_token: ""
+
+# Alert rules
+alerts:
+  rules:
+    - name: "Docker growth"
+      path: /var/lib/docker
+      type: absolute_growth
+      threshold_bytes: 5368709120  # 5 GB
+      period_days: 7
+      notify:
+        - ntfy
+        - email
+    - name: "Root disk usage"
+      path: /
+      type: usage_percent
+      threshold_percent: 90
+      notify:
+        - ntfy
+
+# Display preferences
+display:
+  default_time_range_days: 90
+  default_view: dashboard
+  theme: dark   # dark or light
