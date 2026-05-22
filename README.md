@@ -2,6 +2,8 @@
 
 DiskWatch is a self-hosted webapp for tracking disk usage of your filesystems over time, down to arbitrary folder depth. It runs periodic scans, stores historical data in SQLite, and lets you browse usage trends, spot growth spikes, and receive alerts when thresholds are exceeded.
 
+![DiskWatch screenshot](static/diskwatch.jpg)
+
 ---
 
 ## Installation
