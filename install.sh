@@ -57,7 +57,7 @@ fi
 # Generate collect.sh with real paths substituted
 sed \
   "s|__REPO_DIR__|${SCRIPT_DIR}|g; s|__DATA_DIR__|${DATA_DIR}|g; s|__SERVICE_USER__|${SERVICE_USER}|g" \
-  "${SCRIPT_DIR}/collect.sh" > "${DATA_DIR}/collect.sh"
+  "${SCRIPT_DIR}/collect.sh.template" > "${DATA_DIR}/collect.sh"
 chmod +x "${DATA_DIR}/collect.sh"
 
 # Set ownership of instance directory

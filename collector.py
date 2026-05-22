@@ -350,7 +350,11 @@ def main():
     conn = get_db(args.db)
     ensure_schema(conn)
 
-    roots = config.get("scan", {}).get("roots", [])
+    all_roots = config.get("scan", {}).get("roots", [])
+    # Build from the full config so sibling exclusion works even with --only
+    all_root_norms = [os.path.normpath(r.get("path", "")) for r in all_roots]
+
+    roots = all_roots
     if args.only:
         only_norms = {os.path.normpath(p) for p in args.only}
         roots = [r for r in roots if os.path.normpath(r.get("path", "")) in only_norms]
@@ -361,9 +365,6 @@ def main():
     overall_start = time.monotonic()
     total_dirs = 0
     total_size = 0
-
-    # Build set of all root paths so each scan excludes sibling roots
-    all_root_norms = [os.path.normpath(r.get("path", "")) for r in roots]
 
     for root_cfg in roots:
         root_path = root_cfg.get("path", "")
