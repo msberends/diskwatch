@@ -111,6 +111,16 @@ display:       # default_time_range_days, default_view, theme
 
 The systemd unit (`diskwatch.service`) runs `uvicorn` as a non-root service user with `WorkingDirectory` set to the repo root. The cron job in `instance/collect.sh` runs as root and restores DB file ownership to the service user after each collection so the server can read/write the database.
 
+## Database performance rules
+
+These are non-negotiable. The database runs on consumer SSDs that must not be worn out.
+
+- **No full-table window functions** (`ROW_NUMBER`, `LAG`, `RANK` etc.) on `directory_sizes`. With millions of rows this forces a full sort into a temp buffer, pegging the CPU and hammering the disk. Use index-driven joins instead.
+- **Index-first thinking**: before writing any query touching `directory_sizes`, identify which index it will use. If no index covers the access pattern, add one — don't write the query anyway.
+- **Delta-only writes**: the collector must never INSERT a row that is identical to the previous scan. `directory_current` holds the materialized current state; `directory_sizes` is sparse (changed rows only). Never regress to full-snapshot inserts.
+- **Bulk operations in batches with intermediate commits**: never hold a write transaction open across the entire table. Commit per top-level subtree (collector) or per scan-pair (migration scripts).
+- **Measure before proposing**: for any query touching large tables, reason explicitly about row counts and index usage before writing it.
+
 ## Development workflow
 
 1. Edit source files in the repo root.

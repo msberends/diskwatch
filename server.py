@@ -140,6 +140,7 @@ def _ensure_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_dirsizes_path ON directory_sizes(path);
         CREATE INDEX IF NOT EXISTS idx_dirsizes_scan ON directory_sizes(scan_id);
         CREATE INDEX IF NOT EXISTS idx_dirsizes_scan_path ON directory_sizes(scan_id, path);
+        CREATE INDEX IF NOT EXISTS idx_dirsizes_path_scan ON directory_sizes(path, scan_id DESC);
 
         CREATE TABLE IF NOT EXISTS anomalies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,7 +165,34 @@ def _ensure_schema(conn: sqlite3.Connection):
             acknowledged INTEGER DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts_log(timestamp);
+
+        CREATE TABLE IF NOT EXISTS directory_current (
+            path TEXT PRIMARY KEY,
+            root_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            file_count INTEGER NOT NULL,
+            last_changed_scan_id INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_dircurrent_root ON directory_current(root_path);
+
+        CREATE TABLE IF NOT EXISTS dashboard_cache (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT
+        );
     """)
+    conn.commit()
+    # Add is_tombstone column to directory_sizes — migration for existing databases
+    try:
+        conn.execute(
+            "ALTER TABLE directory_sizes ADD COLUMN is_tombstone INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
+    # Remove non-growth-spike anomaly types — no longer tracked
+    conn.execute("DELETE FROM anomalies WHERE type NOT IN ('growth_spike')")
     conn.commit()
 
 
@@ -304,6 +332,174 @@ def _child_patterns(parent_path: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Cached dashboard endpoint
+# ---------------------------------------------------------------------------
+
+def _build_dashboard(conn: sqlite3.Connection) -> dict:
+    cfg = get_config()
+    roots_cfg = cfg.get("scan", {}).get("roots", [])
+
+    partitions = []
+    for rc in roots_cfg:
+        rp = os.path.normpath(rc["path"])
+        latest = conn.execute(
+            "SELECT metadata, timestamp FROM scans WHERE root_path=? ORDER BY timestamp DESC LIMIT 1",
+            (rp,)
+        ).fetchone()
+        meta: dict = {}
+        if latest and latest["metadata"]:
+            try:
+                meta = json.loads(latest["metadata"])
+            except Exception:
+                pass
+        total = meta.get("partition_total", 0)
+        used  = meta.get("partition_used", 0)
+        free  = total - used if total > 0 else 0
+        pct   = round(used / total * 100, 1) if total > 0 else 0
+
+        pattern, anti = _child_patterns(rp)
+        top3 = conn.execute(
+            """SELECT path, size_bytes FROM directory_current
+               WHERE root_path=? AND path LIKE ? AND path NOT LIKE ?
+               ORDER BY size_bytes DESC LIMIT 3""",
+            (rp, pattern, anti)
+        ).fetchall()
+
+        partitions.append({
+            "root_path": rp,
+            "label": rc.get("label", rp),
+            "type": rc.get("type", ""),
+            "total_bytes": total,
+            "used_bytes": used,
+            "free_bytes": free,
+            "used_percent": pct,
+            "latest_scan": latest["timestamp"] if latest else None,
+            "top_dirs": [{"path": r["path"], "size_bytes": r["size_bytes"]} for r in top3],
+        })
+
+    scan_info = []
+    for rc in roots_cfg:
+        rp = os.path.normpath(rc["path"])
+        row = conn.execute(
+            "SELECT MIN(timestamp) as e, MAX(timestamp) as l, COUNT(*) as n FROM scans WHERE root_path=?",
+            (rp,)
+        ).fetchone()
+        ls = conn.execute(
+            "SELECT total_size_bytes, directories_counted FROM scans WHERE root_path=? ORDER BY timestamp DESC LIMIT 1",
+            (rp,)
+        ).fetchone()
+        scan_info.append({
+            "root_path": rp,
+            "label": rc.get("label", rp),
+            "earliest_scan": row["e"] if row else None,
+            "latest_scan": row["l"] if row else None,
+            "total_scans": row["n"] if row else 0,
+            "total_size_bytes": ls["total_size_bytes"] if ls else 0,
+            "directories_counted": ls["directories_counted"] if ls else 0,
+        })
+
+    # Only immediate children of each root — avoids parent+child double-counting
+    top_dirs_raw: list = []
+    for rc in roots_cfg:
+        rp = os.path.normpath(rc["path"])
+        pattern, anti = _child_patterns(rp)
+        rows = conn.execute(
+            """SELECT path, root_path, size_bytes FROM directory_current
+               WHERE root_path=? AND path LIKE ? AND path NOT LIKE ?
+               ORDER BY size_bytes DESC LIMIT 10""",
+            (rp, pattern, anti)
+        ).fetchall()
+        top_dirs_raw.extend(rows)
+    top_dirs_raw.sort(key=lambda r: r["size_bytes"], reverse=True)
+    top_dirs = top_dirs_raw[:20]
+
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    root_paths = [os.path.normpath(rc["path"]) for rc in roots_cfg]
+    growers: list[dict] = []
+    for rp in root_paths:
+        latest_s = conn.execute(
+            "SELECT scan_id FROM scans WHERE root_path=? ORDER BY timestamp DESC LIMIT 1", (rp,)
+        ).fetchone()
+        earliest_s = conn.execute(
+            "SELECT scan_id FROM scans WHERE root_path=? AND timestamp >= ? ORDER BY timestamp ASC LIMIT 1",
+            (rp, cutoff_7d)
+        ).fetchone()
+        if not latest_s or not earliest_s or latest_s["scan_id"] == earliest_s["scan_id"]:
+            continue
+        rows = conn.execute(
+            """SELECT dc.path, dc.size_bytes AS cur, prev.size_bytes AS prv,
+                      (dc.size_bytes - prev.size_bytes) AS growth
+               FROM directory_current dc
+               JOIN directory_sizes prev ON prev.path = dc.path
+                 AND prev.scan_id = (
+                     SELECT MAX(ds2.scan_id) FROM directory_sizes ds2
+                     WHERE ds2.path = dc.path
+                       AND ds2.scan_id <= ? AND ds2.is_tombstone = 0
+                 )
+               WHERE dc.root_path = ? AND dc.size_bytes > prev.size_bytes""",
+            (earliest_s["scan_id"], rp)
+        ).fetchall()
+        for r in rows:
+            growers.append({
+                "path": r["path"],
+                "root_path": rp,
+                "growth_bytes": r["growth"],
+                "current_size_bytes": r["cur"],
+                "previous_size_bytes": r["prv"],
+            })
+    growers.sort(key=lambda x: x["growth_bytes"], reverse=True)
+
+    anomaly_count = conn.execute(
+        "SELECT COUNT(*) FROM anomalies WHERE type='growth_spike' AND acknowledged=0"
+    ).fetchone()[0]
+    alert_count = conn.execute(
+        "SELECT COUNT(*) FROM alerts_log WHERE acknowledged=0"
+    ).fetchone()[0]
+    recent_alerts = conn.execute(
+        "SELECT * FROM alerts_log WHERE acknowledged=0 ORDER BY timestamp DESC LIMIT 5"
+    ).fetchall()
+
+    return {
+        "partitions": partitions,
+        "scan_info": scan_info,
+        "top_dirs": [dict(r) for r in top_dirs],
+        "growers": growers[:15],
+        "anomaly_count": anomaly_count,
+        "alert_count": alert_count,
+        "recent_alerts": [dict(r) for r in recent_alerts],
+    }
+
+
+@app.get("/api/dashboard")
+def dashboard_cached(diskwatch_session: str | None = Cookie(default=None)):
+    require_auth(diskwatch_session)
+    conn = get_db()
+
+    latest_row = conn.execute("SELECT MAX(timestamp) as ts FROM scans").fetchone()
+    latest_ts = latest_row["ts"] if latest_row else None
+
+    cached = conn.execute(
+        "SELECT value, updated_at FROM dashboard_cache WHERE key='v1' LIMIT 1"
+    ).fetchone()
+
+    if cached and cached["updated_at"] == latest_ts:
+        conn.close()
+        return json.loads(cached["value"])
+
+    result = _build_dashboard(conn)
+
+    if latest_ts:
+        conn.execute(
+            "INSERT OR REPLACE INTO dashboard_cache (key, value, updated_at) VALUES ('v1', ?, ?)",
+            (json.dumps(result), latest_ts)
+        )
+        conn.commit()
+
+    conn.close()
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Dashboard & overview
 # ---------------------------------------------------------------------------
 
@@ -328,37 +524,48 @@ def overview(diskwatch_session: str | None = Cookie(default=None)):
                            "latest_scan": None, "directories": []})
             continue
 
-        scan_id = latest_scan["scan_id"]
         cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         prev_scan = conn.execute(
             """SELECT scan_id FROM scans
                WHERE root_path=? AND timestamp <= ? AND scan_id != ?
                ORDER BY timestamp DESC LIMIT 1""",
-            (root_path, cutoff_7d, scan_id)
+            (root_path, cutoff_7d, latest_scan["scan_id"])
         ).fetchone()
 
         pattern, anti = _child_patterns(root_path)
 
         if prev_scan:
             dirs = conn.execute(
-                """SELECT curr.path, curr.size_bytes, curr.file_count,
-                          prev.size_bytes AS prev_size_bytes
-                   FROM directory_sizes curr
-                   LEFT JOIN directory_sizes prev
-                     ON prev.scan_id = ? AND prev.path = curr.path
-                   WHERE curr.scan_id = ?
-                     AND curr.path LIKE ? AND curr.path NOT LIKE ?
-                   ORDER BY curr.size_bytes DESC""",
-                (prev_scan["scan_id"], scan_id, pattern, anti)
+                """WITH effective_prev AS (
+                       SELECT path, size_bytes, file_count FROM (
+                           SELECT ds.path, ds.size_bytes, ds.file_count,
+                                  ROW_NUMBER() OVER (
+                                      PARTITION BY ds.path ORDER BY ds.scan_id DESC
+                                  ) AS rn
+                           FROM directory_sizes ds
+                           JOIN scans s ON s.scan_id = ds.scan_id
+                           WHERE s.root_path = ? AND ds.scan_id <= ?
+                             AND ds.is_tombstone = 0
+                             AND ds.path LIKE ? AND ds.path NOT LIKE ?
+                       ) WHERE rn = 1
+                   )
+                   SELECT dc.path, dc.size_bytes, dc.file_count, ep.size_bytes AS prev_size_bytes
+                   FROM directory_current dc
+                   LEFT JOIN effective_prev ep ON ep.path = dc.path
+                   WHERE dc.root_path = ?
+                     AND dc.path LIKE ? AND dc.path NOT LIKE ?
+                   ORDER BY dc.size_bytes DESC""",
+                (root_path, prev_scan["scan_id"], pattern, anti,
+                 root_path, pattern, anti)
             ).fetchall()
         else:
             dirs = conn.execute(
                 """SELECT path, size_bytes, file_count, NULL AS prev_size_bytes
-                   FROM directory_sizes
-                   WHERE scan_id = ?
+                   FROM directory_current
+                   WHERE root_path = ?
                      AND path LIKE ? AND path NOT LIKE ?
                    ORDER BY size_bytes DESC""",
-                (scan_id, pattern, anti)
+                (root_path, pattern, anti)
             ).fetchall()
 
         top_dirs = [{
@@ -477,15 +684,13 @@ def tree(path: str, diskwatch_session: str | None = Cookie(default=None)):
         conn.close()
         raise HTTPException(status_code=404, detail="Path not under a known scan root")
 
-    latest = conn.execute(
-        "SELECT scan_id FROM scans WHERE root_path=? ORDER BY timestamp DESC LIMIT 1",
-        (root_path,)
+    has_data = conn.execute(
+        "SELECT 1 FROM directory_current WHERE root_path=? LIMIT 1", (root_path,)
     ).fetchone()
-    if not latest:
+    if not has_data:
         conn.close()
         return []
 
-    scan_id = latest["scan_id"]
     cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     prev = conn.execute(
         """SELECT scan_id FROM scans
@@ -498,24 +703,36 @@ def tree(path: str, diskwatch_session: str | None = Cookie(default=None)):
 
     if prev:
         rows = conn.execute(
-            """SELECT curr.path, curr.size_bytes, curr.file_count,
-                      prev.size_bytes AS prev_size_bytes
-               FROM directory_sizes curr
-               LEFT JOIN directory_sizes prev
-                 ON prev.scan_id = ? AND prev.path = curr.path
-               WHERE curr.scan_id = ?
-                 AND curr.path LIKE ? AND curr.path NOT LIKE ?
-               ORDER BY curr.size_bytes DESC""",
-            (prev["scan_id"], scan_id, pattern, anti)
+            """WITH effective_prev AS (
+                   SELECT path, size_bytes, file_count FROM (
+                       SELECT ds.path, ds.size_bytes, ds.file_count,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY ds.path ORDER BY ds.scan_id DESC
+                              ) AS rn
+                       FROM directory_sizes ds
+                       JOIN scans s ON s.scan_id = ds.scan_id
+                       WHERE s.root_path = ? AND ds.scan_id <= ?
+                         AND ds.is_tombstone = 0
+                         AND ds.path LIKE ? AND ds.path NOT LIKE ?
+                   ) WHERE rn = 1
+               )
+               SELECT dc.path, dc.size_bytes, dc.file_count, ep.size_bytes AS prev_size_bytes
+               FROM directory_current dc
+               LEFT JOIN effective_prev ep ON ep.path = dc.path
+               WHERE dc.root_path = ?
+                 AND dc.path LIKE ? AND dc.path NOT LIKE ?
+               ORDER BY dc.size_bytes DESC""",
+            (root_path, prev["scan_id"], pattern, anti,
+             root_path, pattern, anti)
         ).fetchall()
     else:
         rows = conn.execute(
             """SELECT path, size_bytes, file_count, NULL AS prev_size_bytes
-               FROM directory_sizes
-               WHERE scan_id = ?
+               FROM directory_current
+               WHERE root_path = ?
                  AND path LIKE ? AND path NOT LIKE ?
                ORDER BY size_bytes DESC""",
-            (scan_id, pattern, anti)
+            (root_path, pattern, anti)
         ).fetchall()
 
     children = [{
@@ -561,18 +778,12 @@ def suggest(path: str = "/", diskwatch_session: str | None = Cookie(default=None
                   or rp == "/")
         if not covers:
             continue
-        latest = conn.execute(
-            "SELECT scan_id FROM scans WHERE root_path=? ORDER BY timestamp DESC LIMIT 1",
-            (rp,)
-        ).fetchone()
-        if not latest:
-            continue
         pattern, anti = _child_patterns(parent)
         rows = conn.execute(
-            """SELECT path FROM directory_sizes
-               WHERE scan_id = ? AND path LIKE ? AND path NOT LIKE ?
+            """SELECT path FROM directory_current
+               WHERE root_path = ? AND path LIKE ? AND path NOT LIKE ?
                ORDER BY path LIMIT 50""",
-            (latest["scan_id"], pattern, anti)
+            (rp, pattern, anti)
         ).fetchall()
         for r in rows:
             name = os.path.basename(r["path"])
@@ -606,7 +817,7 @@ def trend(path: str, days: int = None,
         """SELECT s.timestamp, ds.size_bytes, ds.file_count
            FROM directory_sizes ds
            JOIN scans s ON s.scan_id = ds.scan_id
-           WHERE ds.path = ? AND s.timestamp >= ?
+           WHERE ds.path = ? AND s.timestamp >= ? AND ds.is_tombstone = 0
            ORDER BY s.timestamp ASC""",
         (norm, cutoff)
     ).fetchall()
@@ -648,17 +859,27 @@ def biggest_growers(days: int = 7, limit: int = 20,
         if latest["scan_id"] == earliest_in_period["scan_id"]:
             continue
 
+        # Correlated subquery uses idx_dirsizes_path_scan (path, scan_id DESC):
+        # one index seek per path to find its most recent size at or before the
+        # period-start scan — no full-table sort.
         rows = conn.execute(
-            """SELECT curr.path,
-                      curr.size_bytes AS current_size_bytes,
+            """SELECT dc.path,
+                      dc.size_bytes AS current_size_bytes,
                       prev.size_bytes AS previous_size_bytes,
-                      (curr.size_bytes - prev.size_bytes) AS growth_bytes
-               FROM directory_sizes curr
+                      (dc.size_bytes - prev.size_bytes) AS growth_bytes
+               FROM directory_current dc
                JOIN directory_sizes prev
-                 ON prev.scan_id = ? AND prev.path = curr.path
-               WHERE curr.scan_id = ?
-                 AND curr.size_bytes > prev.size_bytes""",
-            (earliest_in_period["scan_id"], latest["scan_id"])
+                 ON prev.path = dc.path
+                AND prev.scan_id = (
+                    SELECT MAX(ds2.scan_id)
+                    FROM directory_sizes ds2
+                    WHERE ds2.path = dc.path
+                      AND ds2.scan_id <= ?
+                      AND ds2.is_tombstone = 0
+                )
+               WHERE dc.root_path = ?
+                 AND dc.size_bytes > prev.size_bytes""",
+            (earliest_in_period["scan_id"], root_path)
         ).fetchall()
 
         for r in rows:
@@ -680,16 +901,30 @@ def get_anomalies(acknowledged: bool = None, limit: int = 50,
                   diskwatch_session: str | None = Cookie(default=None)):
     require_auth(diskwatch_session)
     conn = get_db()
-    query = "SELECT * FROM anomalies"
+    query = "SELECT * FROM anomalies WHERE type='growth_spike'"
     params: list = []
     if acknowledged is not None:
-        query += " WHERE acknowledged=?"
+        query += " AND acknowledged=?"
         params.append(1 if acknowledged else 0)
     query += " ORDER BY timestamp DESC LIMIT ?"
     params.append(limit)
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.get("/api/anomalies/count")
+def count_anomalies(acknowledged: bool = None,
+                    diskwatch_session: str | None = Cookie(default=None)):
+    require_auth(diskwatch_session)
+    conn = get_db()
+    if acknowledged is not None:
+        n = conn.execute("SELECT COUNT(*) FROM anomalies WHERE type='growth_spike' AND acknowledged=?",
+                         (1 if acknowledged else 0,)).fetchone()[0]
+    else:
+        n = conn.execute("SELECT COUNT(*) FROM anomalies WHERE type='growth_spike'").fetchone()[0]
+    conn.close()
+    return {"count": n}
 
 
 @app.post("/api/anomalies/{anomaly_id}/acknowledge")
@@ -701,6 +936,20 @@ def acknowledge_anomaly(anomaly_id: int,
     conn.commit()
     conn.close()
     return {"status": "ok"}
+
+
+@app.get("/api/alerts/count")
+def count_alerts(acknowledged: bool = None,
+                 diskwatch_session: str | None = Cookie(default=None)):
+    require_auth(diskwatch_session)
+    conn = get_db()
+    if acknowledged is not None:
+        n = conn.execute("SELECT COUNT(*) FROM alerts_log WHERE acknowledged=?",
+                         (1 if acknowledged else 0,)).fetchone()[0]
+    else:
+        n = conn.execute("SELECT COUNT(*) FROM alerts_log").fetchone()[0]
+    conn.close()
+    return {"count": n}
 
 
 @app.get("/api/alerts")
@@ -801,6 +1050,20 @@ def _validate_settings(data: dict) -> list[str]:
     for addr in email.get("to_addresses", []):
         if not email_re.match(addr):
             errors.append(f"to_addresses contains invalid email: {addr}")
+
+    spike = data.get("anomalies", {}).get("growth_spike", {})
+    if "min_bytes" in spike:
+        try:
+            if int(spike["min_bytes"]) <= 0:
+                errors.append("anomalies.growth_spike.min_bytes must be > 0")
+        except (ValueError, TypeError):
+            errors.append("anomalies.growth_spike.min_bytes must be a number")
+    if "min_ratio" in spike:
+        try:
+            if not (0 < float(spike["min_ratio"]) <= 1):
+                errors.append("anomalies.growth_spike.min_ratio must be between 0 and 1")
+        except (ValueError, TypeError):
+            errors.append("anomalies.growth_spike.min_ratio must be a number")
 
     for rule in data.get("alerts", {}).get("rules", []):
         if rule.get("type") == "absolute_growth":

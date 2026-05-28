@@ -1,141 +1,355 @@
 /* ============================================================
-   DiskWatch — custom styles on top of Bootstrap 5
+   DiskWatch — Design System
    ============================================================ */
 
-/* --- Fonts & base --- */
+/* --- Custom Properties --- */
 :root {
-  --dw-accent: #2ec4b6;
-  --dw-accent-hover: #26a69a;
-  --dw-sidebar-width: 220px;
-  --dw-topbar-height: 48px;
-  --dw-mobile-topbar-height: 52px;
-  --font-mono: "JetBrains Mono", "Courier New", monospace;
-  --font-ui: "DM Sans", system-ui, sans-serif;
+  --dw-accent:       #38bdf8;
+  --dw-accent-hover: #0ea5e9;
+  --dw-accent-dim:   rgba(56, 189, 248, 0.10);
+  --dw-ok:           #34d399;
+  --dw-warn:         #fbbf24;
+  --dw-crit:         #f87171;
+  --dw-sidebar-w:    224px;
+  --dw-topbar-h:     52px;
+  --dw-mobile-h:     52px;
+  --dw-r:            10px;
+  --dw-r-sm:         6px;
+  --font-ui:         "DM Sans", system-ui, sans-serif;
+  --font-mono:       "JetBrains Mono", "Courier New", monospace;
 }
 
+/* Dark theme (default) */
+[data-bs-theme="dark"] {
+  --dw-bg:       #07101e;
+  --dw-surface:  #0e1c2f;
+  --dw-surface2: #142236;
+  --dw-surface3: #1a2d45;
+  --dw-border:   rgba(148, 163, 184, 0.07);
+  --dw-border2:  rgba(148, 163, 184, 0.13);
+  --dw-text:     #dde6f0;
+  --dw-text2:    #7d97b8;
+  --dw-text3:    #344d68;
+
+  --bs-body-bg:        var(--dw-bg);
+  --bs-body-color:     var(--dw-text);
+  --bs-border-color:   var(--dw-border2);
+  --bs-secondary-bg:   var(--dw-surface2);
+  --bs-tertiary-bg:    var(--dw-surface3);
+  --bs-card-bg:        var(--dw-surface);
+  --bs-secondary-color: var(--dw-text2);
+}
+
+/* Light theme */
+[data-bs-theme="light"] {
+  --dw-bg:       #eef2f8;
+  --dw-surface:  #ffffff;
+  --dw-surface2: #f4f7fb;
+  --dw-surface3: #e8edf5;
+  --dw-border:   rgba(15, 23, 42, 0.06);
+  --dw-border2:  rgba(15, 23, 42, 0.11);
+  --dw-text:     #0f172a;
+  --dw-text2:    #475569;
+  --dw-text3:    #94a3b8;
+  --dw-accent:       #0284c7;
+  --dw-accent-hover: #0369a1;
+  --dw-accent-dim:   rgba(2, 132, 199, 0.08);
+  --dw-ok:           #059669;
+  --dw-warn:         #d97706;
+  --dw-crit:         #dc2626;
+
+  --bs-body-bg:        var(--dw-bg);
+  --bs-body-color:     var(--dw-text);
+  --bs-border-color:   var(--dw-border2);
+  --bs-secondary-bg:   var(--dw-surface2);
+  --bs-tertiary-bg:    var(--dw-surface3);
+  --bs-card-bg:        var(--dw-surface);
+  --bs-secondary-color: var(--dw-text2);
+}
+
+/* --- Base --- */
 body {
   font-family: var(--font-ui);
+  background: var(--dw-bg);
+  color: var(--dw-text);
   overflow-x: hidden;
-}
-
-/* --- Accent colour utilities --- */
-.text-accent { color: var(--dw-accent) !important; }
-
-.btn-accent {
-  background-color: var(--dw-accent);
-  border-color: var(--dw-accent);
-  color: #000;
-  font-weight: 600;
-}
-.btn-accent:hover, .btn-accent:focus {
-  background-color: var(--dw-accent-hover);
-  border-color: var(--dw-accent-hover);
-  color: #000;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ============================================================
    Layout: sidebar + main
    ============================================================ */
-
-/* Desktop: sidebar fixed left, main offset right */
 @media (min-width: 768px) {
   .dw-sidebar {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: var(--dw-sidebar-width);
+    top: 0; left: 0;
+    width: var(--dw-sidebar-w);
     height: 100vh;
     z-index: 1000;
-    background: var(--bs-body-bg);
-    border-right: 1px solid var(--bs-border-color);
+    background: var(--dw-surface);
+    border-right: 1px solid var(--dw-border);
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
   }
-
-  .dw-main {
-    margin-left: var(--dw-sidebar-width);
-    min-height: 100vh;
-  }
-
+  .dw-main { margin-left: var(--dw-sidebar-w); min-height: 100vh; }
   .dw-mobile-topbar { display: none !important; }
 }
-
-/* Mobile: sidebar hidden (offcanvas); main takes full width */
 @media (max-width: 767.98px) {
   .dw-sidebar { display: none !important; }
-  .dw-main { margin-left: 0; padding-top: var(--dw-mobile-topbar-height); }
+  .dw-main { margin-left: 0; padding-top: var(--dw-mobile-h); }
   .dw-mobile-topbar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
+    position: fixed; top: 0; left: 0; right: 0;
     z-index: 999;
-    background: var(--bs-body-bg);
-    border-bottom: 1px solid var(--bs-border-color);
-    height: var(--dw-mobile-topbar-height);
+    height: var(--dw-mobile-h);
+    background: var(--dw-surface);
+    border-bottom: 1px solid var(--dw-border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 10px;
   }
 }
 
-/* --- Sidebar brand / nav --- */
+/* --- Sidebar brand --- */
 .dw-sidebar-brand {
-  height: var(--dw-topbar-height);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: var(--dw-topbar-h);
+  flex-shrink: 0;
+}
+.dw-brand-icon {
+  color: var(--dw-accent);
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.dw-brand-name {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--dw-text);
 }
 
+/* --- Sidebar health status --- */
+.dw-sidebar-status {
+  padding: 8px 16px 12px;
+  border-bottom: 1px solid var(--dw-border);
+  flex-shrink: 0;
+}
+.dw-status-dot-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dw-ok);
+}
+.dw-status-dot-row.warn { color: var(--dw-warn); }
+.dw-status-dot-row.crit { color: var(--dw-crit); }
+.dw-status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+.dw-status-sub {
+  font-size: 0.72rem;
+  color: var(--dw-text3);
+  margin-top: 2px;
+  padding-left: 14px;
+}
+
+/* --- Sidebar nav --- */
 .dw-sidebar-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 10px 8px;
+  flex-grow: 1;
 }
-
 .dw-nav-link {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   padding: 8px 12px;
-  border-radius: 6px;
-  color: var(--bs-body-color);
+  border-radius: var(--dw-r-sm);
+  color: var(--dw-text2);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
   transition: background 0.12s, color 0.12s;
-}
-.dw-nav-link:hover {
-  background: var(--bs-secondary-bg);
-  color: var(--dw-accent);
-}
-.dw-nav-link.active {
-  background: color-mix(in srgb, var(--dw-accent) 15%, transparent);
-  color: var(--dw-accent);
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.4;
 }
 .dw-nav-link i { font-size: 1rem; width: 1.1rem; flex-shrink: 0; }
+.dw-nav-link:hover { background: var(--dw-surface2); color: var(--dw-text); }
+.dw-nav-link.active {
+  background: var(--dw-accent-dim);
+  color: var(--dw-accent);
+  font-weight: 600;
+}
+.dw-nav-link.text-danger { color: var(--dw-crit) !important; }
+.dw-nav-link.text-danger:hover { background: rgba(248, 113, 113, 0.08); }
+.dw-badge {
+  margin-left: auto;
+  font-size: 0.65rem;
+  min-width: 1.5em;
+  border-radius: 9999px;
+  padding: 1px 5px;
+  font-weight: 700;
+}
+
+/* --- Sidebar footer --- */
+.dw-sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--dw-border);
+  flex-shrink: 0;
+}
+
+/* --- Offcanvas (mobile) --- */
+.dw-offcanvas {
+  background: var(--dw-surface) !important;
+  width: var(--dw-sidebar-w) !important;
+}
 
 /* --- Top bar (desktop) --- */
 .dw-topbar {
-  height: var(--dw-topbar-height);
-  border-bottom: 1px solid var(--bs-border-color);
-  background: var(--bs-body-bg);
+  height: var(--dw-topbar-h);
+  border-bottom: 1px solid var(--dw-border);
+  background: var(--dw-surface);
   position: sticky;
   top: 0;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
 }
-
-/* --- Offcanvas sidebar (mobile) --- */
-.dw-offcanvas {
-  background: var(--bs-body-bg);
-  width: var(--dw-sidebar-width) !important;
+.dw-topbar-health {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
+.dw-topbar-health .dw-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.dw-topbar-health.ok   .dw-dot { background: var(--dw-ok);   box-shadow: 0 0 5px var(--dw-ok); }
+.dw-topbar-health.ok   { color: var(--dw-ok); }
+.dw-topbar-health.warn .dw-dot { background: var(--dw-warn);  box-shadow: 0 0 5px var(--dw-warn); }
+.dw-topbar-health.warn { color: var(--dw-warn); }
+.dw-topbar-health.crit .dw-dot { background: var(--dw-crit);  box-shadow: 0 0 5px var(--dw-crit); }
+.dw-topbar-health.crit { color: var(--dw-crit); }
+.dw-topbar-sep { color: var(--dw-text3); }
+.dw-topbar-lastscan { font-size: 0.8rem; color: var(--dw-text2); }
 
 /* --- Content area --- */
-.dw-content {
-  max-width: 1400px;
+.dw-content { max-width: 1400px; padding: 24px; }
+@media (max-width: 767.98px) { .dw-content { padding: 16px; } }
+
+/* ============================================================
+   Accent utilities & buttons
+   ============================================================ */
+.text-accent { color: var(--dw-accent) !important; }
+.btn-accent {
+  background: var(--dw-accent);
+  border-color: var(--dw-accent);
+  color: #000;
+  font-weight: 600;
+}
+.btn-accent:hover, .btn-accent:focus {
+  background: var(--dw-accent-hover);
+  border-color: var(--dw-accent-hover);
+  color: #000;
+}
+.btn-outline-accent {
+  border-color: var(--dw-accent);
+  color: var(--dw-accent);
+}
+.btn-outline-accent:hover {
+  background: var(--dw-accent);
+  border-color: var(--dw-accent);
+  color: #000;
+}
+.dw-btn-icon {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  border-radius: var(--dw-r-sm);
+  color: var(--dw-text3);
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+.dw-btn-icon:hover { color: var(--dw-accent); background: var(--dw-accent-dim); }
+
+/* ============================================================
+   Panels / Cards
+   ============================================================ */
+.dw-panel {
+  background: var(--dw-surface);
+  border: 1px solid var(--dw-border);
+  border-radius: var(--dw-r);
+  overflow: hidden;
+}
+.dw-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 18px 11px;
+  border-bottom: 1px solid var(--dw-border);
+}
+.dw-panel-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dw-text2);
+}
+.dw-panel-link {
+  font-size: 0.78rem;
+  color: var(--dw-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.dw-panel-link:hover { color: var(--dw-accent-hover); text-decoration: underline; }
+.dw-panel-body { padding: 14px 18px; }
+
+/* Override Bootstrap card to match */
+.card {
+  background: var(--dw-surface) !important;
+  border-color: var(--dw-border) !important;
+  border-radius: var(--dw-r) !important;
+}
+.card-header {
+  background: transparent !important;
+  border-bottom-color: var(--dw-border) !important;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dw-text2) !important;
+}
+.card-footer {
+  background: transparent !important;
+  border-top-color: var(--dw-border) !important;
 }
 
 /* ============================================================
    Login overlay
    ============================================================ */
 .dw-login-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--bs-body-bg);
+  position: fixed; inset: 0;
+  background: var(--dw-bg);
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -144,146 +358,578 @@ body {
 .dw-login-card {
   width: 100%;
   max-width: 380px;
+  background: var(--dw-surface);
+  border: 1px solid var(--dw-border2);
+  border-radius: 16px;
 }
+.dw-login-card .card-body { padding: 36px 32px; }
 
 /* ============================================================
-   Monospace data display
+   Dashboard: Health banner
    ============================================================ */
-.dw-mono, .dw-size, .dw-path {
-  font-family: var(--font-mono);
-  font-size: 0.85em;
+.dw-health-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: var(--dw-r-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 20px;
 }
+.dw-health-banner--warning {
+  background: rgba(251, 191, 36, 0.10);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  color: var(--dw-warn);
+}
+.dw-health-banner--critical {
+  background: rgba(248, 113, 113, 0.10);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  color: var(--dw-crit);
+}
+.dw-health-banner a { color: inherit; }
 
 /* ============================================================
-   Partition usage cards
+   Dashboard: Partition gauges
    ============================================================ */
-.dw-partition-card .progress {
-  height: 8px;
-  border-radius: 4px;
+.dw-partition-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 20px;
 }
+.dw-partition-card {
+  flex: 1;
+  min-width: 210px;
+  max-width: 320px;
+  background: var(--dw-surface);
+  border: 1px solid var(--dw-border);
+  border-radius: var(--dw-r);
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: border-color 0.2s;
+}
+.dw-partition-card:hover { border-color: var(--dw-border2); }
+.dw-partition-card.crit { border-color: rgba(248, 113, 113, 0.3); }
+.dw-partition-card.warn { border-color: rgba(251, 191, 36, 0.3); }
+.dw-gauge-svg { flex-shrink: 0; }
+.dw-gauge-arc {
+  transition: stroke-dashoffset 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.dw-partition-info { min-width: 0; flex-grow: 1; }
 .dw-partition-label {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--bs-secondary-color);
+  color: var(--dw-text2);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-partition-path {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--dw-text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.dw-partition-sizes {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--dw-text);
+}
+.dw-partition-free {
+  font-size: 0.75rem;
+  color: var(--dw-text2);
+  margin-top: 1px;
+}
+.dw-partition-topdir {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--dw-text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.7;
 }
 
 /* ============================================================
-   Directory listing (Browse view)
+   Dashboard: KPI strip
    ============================================================ */
-.dw-dir-item {
+.dw-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 900px)  { .dw-kpi-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .dw-kpi-row { grid-template-columns: 1fr 1fr; } }
+
+.dw-kpi-card {
+  background: var(--dw-surface);
+  border: 1px solid var(--dw-border);
+  border-radius: var(--dw-r);
+  padding: 16px 18px;
+}
+.dw-kpi-card--warn { border-color: rgba(251, 191, 36, 0.25); }
+.dw-kpi-card--crit { border-color: rgba(248, 113, 113, 0.25); }
+.dw-kpi-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--dw-text2);
+  margin-bottom: 6px;
+}
+.dw-kpi-value {
+  font-family: var(--font-mono);
+  font-size: 1.55rem;
+  font-weight: 600;
+  color: var(--dw-text);
+  line-height: 1.1;
+  margin-bottom: 4px;
+  letter-spacing: -0.02em;
+}
+.dw-kpi-value.up   { color: var(--dw-crit); }
+.dw-kpi-value.warn { color: var(--dw-warn); }
+.dw-kpi-value.crit { color: var(--dw-crit); }
+.dw-kpi-sub {
+  font-size: 0.75rem;
+  color: var(--dw-text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================
+   Dashboard: Charts row
+   ============================================================ */
+.dw-charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 900px) { .dw-charts-row { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   Bar lists (dashboard charts as CSS bars)
+   ============================================================ */
+.dw-barlist { padding: 4px 0; }
+.dw-barlist-item {
+  padding: 7px 0;
   cursor: pointer;
+  border-radius: var(--dw-r-sm);
   transition: background 0.1s;
 }
-.dw-dir-item:hover {
-  background: var(--bs-secondary-bg);
+.dw-barlist-item:hover { background: var(--dw-surface2); margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
+.dw-barlist-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
 }
-.dw-dir-item.selected {
-  background: color-mix(in srgb, var(--dw-accent) 12%, transparent);
-  border-left: 3px solid var(--dw-accent);
-}
-.dw-dir-name {
+.dw-barlist-name {
   font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--dw-text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.dw-barlist-val {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dw-text);
+  flex-shrink: 0;
+}
+.dw-barlist-val.up   { color: var(--dw-crit); }
+.dw-barlist-val.ok   { color: var(--dw-ok); }
+.dw-barlist-track {
+  height: 4px;
+  background: var(--dw-surface3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dw-barlist-fill {
+  height: 100%;
+  background: var(--dw-accent);
+  border-radius: 2px;
+  width: 0;
+  transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.dw-barlist-fill.up   { background: var(--dw-crit); }
+.dw-barlist-fill.warn { background: var(--dw-warn); }
+.dw-barlist-fill.ok   { background: var(--dw-ok); }
+
+/* ============================================================
+   Dashboard: Alert rows
+   ============================================================ */
+.dw-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--dw-border);
   font-size: 0.85rem;
+}
+.dw-alert-row:last-child { border-bottom: none; }
+.dw-alert-row-path {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dw-text);
+}
+.dw-alert-row-msg {
+  font-size: 0.78rem;
+  color: var(--dw-text2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dw-growth-up   { color: #dc3545; }
-.dw-growth-down { color: #198754; }
-.dw-growth-flat { color: var(--bs-secondary-color); }
+.dw-time-ago { font-size: 0.75rem; color: var(--dw-text3); flex-shrink: 0; }
 
 /* ============================================================
-   Breadcrumb
+   Browse view
    ============================================================ */
-.dw-breadcrumb .breadcrumb-item a {
+.dw-browse-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1024px) { .dw-browse-grid { grid-template-columns: 1fr; } }
+
+/* Path bar */
+.dw-path-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--dw-surface);
+  border: 1px solid var(--dw-border2);
+  border-radius: var(--dw-r);
+  padding: 6px 12px;
+  margin-bottom: 14px;
+  position: relative;
+}
+.dw-path-bar:focus-within { border-color: var(--dw-accent); }
+.dw-path-bar i { color: var(--dw-text2); font-size: 0.95rem; flex-shrink: 0; }
+.dw-path-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--dw-text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  min-width: 0;
+}
+::placeholder { color: var(--dw-text3); }
+
+/* Breadcrumb */
+.dw-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+}
+.dw-bc-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.dw-bc-link {
   color: var(--dw-accent);
   text-decoration: none;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.1s;
 }
-.dw-breadcrumb .breadcrumb-item.active {
+.dw-bc-link:hover { background: var(--dw-accent-dim); }
+.dw-bc-sep { color: var(--dw-text3); padding: 0 2px; }
+.dw-bc-current {
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  color: var(--dw-text);
+  font-weight: 600;
+  padding: 2px 6px;
 }
 
-/* ============================================================
-   Charts
-   ============================================================ */
-.dw-chart-container {
-  width: 100%;
-  min-height: 320px;
+/* Directory list */
+.dw-dir-list { padding: 4px 0; }
+.dw-dir-row {
+  display: grid;
+  grid-template-columns: 16px 1fr 80px 86px 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-radius: var(--dw-r-sm);
+  transition: background 0.1s;
+  margin: 1px 0;
 }
-.dw-chart-placeholder {
+.dw-dir-row:hover { background: var(--dw-surface2); }
+.dw-dir-row.selected {
+  background: var(--dw-accent-dim);
+  border-left: 2px solid var(--dw-accent);
+  padding-left: 12px;
+}
+.dw-dir-row:focus { outline: none; background: var(--dw-surface2); }
+.dw-folder-icon { color: var(--dw-accent); font-size: 0.85rem; opacity: 0.8; }
+.dw-dir-row.selected .dw-folder-icon { opacity: 1; }
+.dw-dir-name-col { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dw-dir-name {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--dw-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-dir-bar-track {
+  height: 3px;
+  background: var(--dw-surface3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dw-dir-bar-fill {
+  height: 100%;
+  background: var(--dw-accent);
+  border-radius: 2px;
+  width: 0;
+  transition: width 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.dw-dir-size {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dw-text);
+  text-align: right;
+}
+.dw-dir-delta {
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.dw-dir-delta.up   { color: var(--dw-crit); }
+.dw-dir-delta.down { color: var(--dw-ok); }
+.dw-dir-delta.flat { color: var(--dw-text3); }
+.dw-dir-empty {
+  text-align: center;
+  color: var(--dw-text2);
+  padding: 40px 20px;
+  font-size: 0.875rem;
+}
+
+/* Browse sort controls */
+.dw-sort-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 320px;
-  color: var(--bs-secondary-color);
-  font-size: 0.9rem;
+  gap: 8px;
+  padding: 0 14px 8px;
+  border-bottom: 1px solid var(--dw-border);
+  margin-bottom: 4px;
 }
+.dw-sort-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--dw-text3); font-weight: 600; }
+.dw-sort-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--dw-text2);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.dw-sort-btn.active { border-color: var(--dw-accent); color: var(--dw-accent); background: var(--dw-accent-dim); }
+.dw-sort-btn:hover:not(.active) { border-color: var(--dw-border2); color: var(--dw-text); }
+
+/* Root picker */
+.dw-root-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.dw-root-picker label { font-size: 0.78rem; color: var(--dw-text2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0; }
+
+/* Trend range buttons */
+.dw-range-group {
+  display: flex;
+  gap: 4px;
+}
+.dw-range-btn {
+  background: none;
+  border: 1px solid var(--dw-border2);
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--dw-text2);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.dw-range-btn.active { border-color: var(--dw-accent); color: var(--dw-accent); background: var(--dw-accent-dim); }
+.dw-range-btn:hover:not(.active) { color: var(--dw-text); }
+
+/* ============================================================
+   Growth / delta indicators
+   ============================================================ */
+.dw-growth-up   { color: var(--dw-crit); }
+.dw-growth-down { color: var(--dw-ok); }
+.dw-growth-flat { color: var(--dw-text3); }
 
 /* ============================================================
    Tables
    ============================================================ */
 .dw-table th {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--bs-secondary-color);
+  letter-spacing: 0.06em;
+  color: var(--dw-text2);
   white-space: nowrap;
+  border-bottom: 1px solid var(--dw-border) !important;
+  background: var(--dw-surface2) !important;
+  padding: 10px 14px !important;
 }
 .dw-table td {
-  font-size: 0.875rem;
+  font-size: 0.855rem;
   vertical-align: middle;
+  border-bottom: 1px solid var(--dw-border) !important;
+  padding: 9px 14px !important;
 }
+.dw-table tbody tr:last-child td { border-bottom: none !important; }
 .dw-table .dw-path {
-  max-width: 320px;
+  max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /* ============================================================
-   Badges
+   Monospace data
    ============================================================ */
-.dw-badge {
-  font-size: 0.65rem;
-  min-width: 1.4em;
-  border-radius: 9999px;
+.dw-mono { font-family: var(--font-mono); font-size: 0.84em; }
+.dw-path { font-family: var(--font-mono); font-size: 0.84em; }
+
+/* ============================================================
+   Charts (Plotly container)
+   ============================================================ */
+.dw-chart-container { width: 100%; min-height: 280px; }
+.dw-chart-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  color: var(--dw-text2);
+  font-size: 0.875rem;
+  text-align: center;
 }
 
 /* ============================================================
-   Loading spinner overlay
+   Loading / spinner
    ============================================================ */
 .dw-spinner-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
+  min-height: 180px;
 }
+.dw-spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--dw-border2);
+  border-top-color: var(--dw-accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Skeleton loading */
+.dw-skeleton {
+  background: linear-gradient(90deg,
+    var(--dw-surface2) 25%,
+    var(--dw-surface3) 50%,
+    var(--dw-surface2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
 
 /* ============================================================
-   Settings accordion
+   Settings
    ============================================================ */
+.dw-settings .accordion-item {
+  background: var(--dw-surface) !important;
+  border-color: var(--dw-border) !important;
+}
 .dw-settings .accordion-button {
+  background: var(--dw-surface2) !important;
+  color: var(--dw-text) !important;
   font-weight: 600;
   font-size: 0.9rem;
+  box-shadow: none !important;
+}
+.dw-settings .accordion-button:not(.collapsed) {
+  background: var(--dw-surface3) !important;
+  color: var(--dw-accent) !important;
+}
+.dw-settings .accordion-button::after {
+  filter: invert(50%);
 }
 .dw-settings .form-label {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--bs-secondary-color);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--dw-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .dw-settings .form-control,
 .dw-settings .form-select {
+  background: var(--dw-surface2);
+  border-color: var(--dw-border2);
+  color: var(--dw-text);
   font-size: 0.875rem;
 }
-
-/* Scan root / alert rule list items in settings */
-.dw-rule-item, .dw-root-item {
-  background: var(--bs-secondary-bg);
-  border-radius: 6px;
+.dw-settings .form-control:focus,
+.dw-settings .form-select:focus {
+  background: var(--dw-surface2);
+  border-color: var(--dw-accent);
+  box-shadow: 0 0 0 2px var(--dw-accent-dim);
+  color: var(--dw-text);
+}
+.form-control, .form-select, .form-check-input {
+  background-color: var(--dw-surface2) !important;
+  border-color: var(--dw-border2) !important;
+  color: var(--dw-text) !important;
+}
+.form-control:focus, .form-select:focus {
+  background-color: var(--dw-surface2) !important;
+  border-color: var(--dw-accent) !important;
+  box-shadow: 0 0 0 2px var(--dw-accent-dim) !important;
+  color: var(--dw-text) !important;
+}
+.dw-root-item, .dw-rule-item {
+  background: var(--dw-surface2);
+  border: 1px solid var(--dw-border);
+  border-radius: var(--dw-r-sm);
   padding: 10px 14px;
   margin-bottom: 6px;
   display: flex;
@@ -291,47 +937,81 @@ body {
   gap: 10px;
   font-size: 0.875rem;
 }
-.dw-rule-item .dw-mono, .dw-root-item .dw-mono {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+/* ============================================================
+   Scan history
+   ============================================================ */
+.dw-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dw-text2);
+  margin-bottom: 12px;
 }
 
 /* ============================================================
-   Overview stat cards
+   Toasts
    ============================================================ */
-.dw-stat-card .card-title {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--bs-secondary-color);
-  margin-bottom: 4px;
-}
-.dw-stat-card .dw-stat-value {
-  font-family: var(--font-mono);
-  font-size: 1.5rem;
-  font-weight: 500;
-  color: var(--dw-accent);
-  line-height: 1.2;
-}
-.dw-stat-card .dw-stat-sub {
-  font-size: 0.78rem;
-  color: var(--bs-secondary-color);
-  margin-top: 2px;
-}
-
-/* ============================================================
-   Misc
-   ============================================================ */
-.dw-section-title {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--bs-secondary-color);
-  margin-bottom: 0.75rem;
-  font-weight: 600;
-}
-
-/* Make error modals / toasts readable */
 .toast-body { font-size: 0.875rem; }
+
+/* ============================================================
+   Autocomplete dropdown
+   ============================================================ */
+.dw-autocomplete {
+  position: absolute;
+  z-index: 9999;
+  background: var(--dw-surface);
+  border: 1px solid var(--dw-border2);
+  border-radius: var(--dw-r-sm);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.dw-autocomplete-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--dw-text2);
+  cursor: pointer;
+}
+.dw-autocomplete-item:hover,
+.dw-autocomplete-item.active {
+  background: var(--dw-accent-dim);
+  color: var(--dw-accent);
+}
+
+/* ============================================================
+   Misc utilities
+   ============================================================ */
+.dw-empty {
+  text-align: center;
+  color: var(--dw-text2);
+  font-size: 0.875rem;
+  padding: 24px;
+}
+.dw-mono-sm { font-family: var(--font-mono); font-size: 0.8rem; }
+.text-muted { color: var(--dw-text2) !important; }
+
+/* Bootstrap modal override */
+.modal-content {
+  background: var(--dw-surface) !important;
+  border-color: var(--dw-border) !important;
+}
+.modal-header {
+  border-bottom-color: var(--dw-border) !important;
+}
+.modal-footer {
+  border-top-color: var(--dw-border) !important;
+}
+
+/* Scrollbar (webkit) */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--dw-surface3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dw-text3); }

@@ -59,6 +59,8 @@ def ensure_schema(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_dirsizes_path ON directory_sizes(path);
         CREATE INDEX IF NOT EXISTS idx_dirsizes_scan ON directory_sizes(scan_id);
+        CREATE INDEX IF NOT EXISTS idx_dirsizes_scan_path ON directory_sizes(scan_id, path);
+        CREATE INDEX IF NOT EXISTS idx_dirsizes_path_scan ON directory_sizes(path, scan_id DESC);
 
         CREATE TABLE IF NOT EXISTS anomalies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +85,28 @@ def ensure_schema(conn: sqlite3.Connection):
             acknowledged INTEGER DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts_log(timestamp);
+
+        CREATE TABLE IF NOT EXISTS directory_current (
+            path TEXT PRIMARY KEY,
+            root_path TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            file_count INTEGER NOT NULL,
+            last_changed_scan_id INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_dircurrent_root ON directory_current(root_path);
     """)
+    conn.commit()
+    # Add is_tombstone column to directory_sizes — migration for existing databases
+    try:
+        conn.execute(
+            "ALTER TABLE directory_sizes ADD COLUMN is_tombstone INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
+    # Remove non-growth-spike anomaly types — no longer tracked
+    conn.execute("DELETE FROM anomalies WHERE type NOT IN ('growth_spike')")
     conn.commit()
 
 
@@ -146,28 +169,24 @@ def scan_directory(root_path: str, excludes: list, dry_run: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 def detect_anomalies(conn: sqlite3.Connection, scan_id: int, root_path: str,
-                     current: dict, timestamp: str, dry_run: bool):
-    """Compare current scan to previous scan for the same root, insert anomalies."""
-    row = conn.execute(
-        """SELECT scan_id FROM scans
-           WHERE root_path = ? AND scan_id != ?
-           ORDER BY timestamp DESC LIMIT 1""",
-        (root_path, scan_id)
-    ).fetchone()
-    if not row:
-        return  # no previous scan to compare
+                     current: dict, prev_state: dict, timestamp: str,
+                     config: dict, dry_run: bool):
+    """Compare current scan sizes to the pre-scan snapshot, insert anomalies."""
+    if not prev_state:
+        return  # no previous data for this root
 
-    prev_scan_id = row["scan_id"]
-    prev_rows = conn.execute(
-        "SELECT path, size_bytes FROM directory_sizes WHERE scan_id = ?",
-        (prev_scan_id,)
-    ).fetchall()
-    prev = {r["path"]: r["size_bytes"] for r in prev_rows}
+    spike_cfg = config.get("anomalies", {}).get("growth_spike", {})
+    min_bytes = int(spike_cfg.get("min_bytes", GROWTH_SPIKE_MIN_BYTES))
+    min_ratio = float(spike_cfg.get("min_ratio", GROWTH_SPIKE_MIN_RATIO))
+    notify_channels = spike_cfg.get("notify", [])
+
+    prev = {p: d["size_bytes"] for p, d in prev_state.items()}
 
     curr_paths = set(current.keys())
     prev_paths = set(prev.keys())
 
     anomalies = []
+    spike_msgs = []
 
     # growth spikes
     for path in curr_paths & prev_paths:
@@ -176,26 +195,17 @@ def detect_anomalies(conn: sqlite3.Connection, scan_id: int, root_path: str,
         if prev_size > 0:
             growth = curr_size - prev_size
             ratio = growth / prev_size
-            if growth >= GROWTH_SPIKE_MIN_BYTES and ratio >= GROWTH_SPIKE_MIN_RATIO:
+            if growth >= min_bytes and ratio >= min_ratio:
+                pct = round(ratio * 100, 1)
                 anomalies.append((scan_id, timestamp, path, "growth_spike", json.dumps({
                     "previous_size": prev_size,
                     "current_size": curr_size,
                     "growth_bytes": growth,
-                    "growth_percent": round(ratio * 100, 1),
+                    "growth_percent": pct,
                 })))
-
-    # new directories
-    for path in curr_paths - prev_paths:
-        anomalies.append((scan_id, timestamp, path, "new_directory", json.dumps({
-            "current_size": current[path]["size_bytes"],
-            "file_count": current[path]["file_count"],
-        })))
-
-    # deleted directories
-    for path in prev_paths - curr_paths:
-        anomalies.append((scan_id, timestamp, path, "deleted_directory", json.dumps({
-            "previous_size": prev[path],
-        })))
+                spike_msgs.append(
+                    f"{path}: {_fmt_bytes(prev_size)} → {_fmt_bytes(curr_size)} (+{pct}%)"
+                )
 
     if not dry_run and anomalies:
         conn.executemany(
@@ -203,7 +213,13 @@ def detect_anomalies(conn: sqlite3.Connection, scan_id: int, root_path: str,
             anomalies
         )
         conn.commit()
-        print(f"  Detected {len(anomalies)} anomaly/anomalies.")
+        print(f"  Detected {len(anomalies)} growth spike(s).")
+
+    if not dry_run and spike_msgs and notify_channels:
+        msg = "Growth spike(s) detected:\n" + "\n".join(spike_msgs)
+        results = send_notification(config, notify_channels, "DiskWatch: Growth Spike", msg)
+        for ch, (ok, err) in results.items():
+            print(f"  Notification [{ch}]: {'sent' if ok else 'failed: ' + err}")
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +424,15 @@ def main():
             metadata = {"partition_total": 0, "partition_used": 0,
                         "partition_free": 0, "errors": [str(e)]}
 
+        # Load current snapshot before scanning — this is the effective previous state
+        prev_state = {
+            r["path"]: {"size_bytes": r["size_bytes"], "file_count": r["file_count"]}
+            for r in conn.execute(
+                "SELECT path, size_bytes, file_count FROM directory_current WHERE root_path=?",
+                (norm_root,)
+            )
+        }
+
         # Walk filesystem, committing per top-level directory
         all_sizes = {}
         all_errors = list(metadata.get("errors", []))
@@ -442,14 +467,20 @@ def main():
             print(f"  {tl_path}: {_fmt_bytes(tl_size)}, "
                   f"{tl_files:,} files, {_fmt_duration(tl_elapsed)}")
 
-            # Commit this top-level subtree immediately for graceful interruption
-            rows = [(scan_id, p, d["size_bytes"], d["file_count"])
-                    for p, d in tl_sizes.items()]
-            conn.executemany(
-                "INSERT OR IGNORE INTO directory_sizes (scan_id, path, size_bytes, file_count) "
-                "VALUES (?,?,?,?)",
-                rows
-            )
+            # Delta insert: only store rows that changed or are new
+            changed_rows = [
+                (scan_id, p, d["size_bytes"], d["file_count"], 0)
+                for p, d in tl_sizes.items()
+                if p not in prev_state
+                or prev_state[p]["size_bytes"] != d["size_bytes"]
+                or prev_state[p]["file_count"] != d["file_count"]
+            ]
+            if changed_rows:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO directory_sizes "
+                    "(scan_id, path, size_bytes, file_count, is_tombstone) VALUES (?,?,?,?,?)",
+                    changed_rows
+                )
             conn.commit()
             dir_count += len(tl_sizes)
 
@@ -472,12 +503,26 @@ def main():
         root_total_size += root_direct_size
         root_total_files += root_direct_files
         all_sizes[norm_root] = {"size_bytes": root_total_size, "file_count": root_total_files}
-        conn.execute(
-            "INSERT OR IGNORE INTO directory_sizes (scan_id, path, size_bytes, file_count) "
-            "VALUES (?,?,?,?)",
-            (scan_id, norm_root, root_total_size, root_total_files)
-        )
+        prev_root = prev_state.get(norm_root)
+        if (prev_root is None
+                or prev_root["size_bytes"] != root_total_size
+                or prev_root["file_count"] != root_total_files):
+            conn.execute(
+                "INSERT OR IGNORE INTO directory_sizes "
+                "(scan_id, path, size_bytes, file_count, is_tombstone) VALUES (?,?,?,?,0)",
+                (scan_id, norm_root, root_total_size, root_total_files)
+            )
         dir_count += 1
+
+        # Tombstones for paths that existed previously but are gone now
+        deleted_paths = set(prev_state.keys()) - set(all_sizes.keys())
+        if deleted_paths:
+            conn.executemany(
+                "INSERT OR IGNORE INTO directory_sizes "
+                "(scan_id, path, size_bytes, file_count, is_tombstone) VALUES (?,?,0,0,1)",
+                [(scan_id, p) for p in deleted_paths]
+            )
+
         conn.commit()
 
         scan_elapsed = time.monotonic() - scan_start
@@ -494,15 +539,49 @@ def main():
         total_dirs += dir_count
         total_size += root_total_size
 
+        delta_count = conn.execute(
+            "SELECT COUNT(*) FROM directory_sizes WHERE scan_id=? AND is_tombstone=0",
+            (scan_id,)
+        ).fetchone()[0]
         print(f"  Total: {_fmt_bytes(root_total_size)}, {dir_count:,} directories, "
-              f"{len(all_errors)} error(s), {_fmt_duration(scan_elapsed)}")
+              f"{delta_count:,} changed, {len(all_errors)} error(s), {_fmt_duration(scan_elapsed)}")
 
-        # Anomaly detection
-        detect_anomalies(conn, scan_id, norm_root, all_sizes, timestamp, args.dry_run)
+        # Anomaly detection uses the pre-scan snapshot (prev_state)
+        detect_anomalies(conn, scan_id, norm_root, all_sizes, prev_state,
+                         timestamp, config, args.dry_run)
 
         # Alert evaluation
         evaluate_alerts(conn, config, scan_id, norm_root, all_sizes,
                         metadata, timestamp, args.dry_run)
+
+        # Update directory_current — only for new or changed paths.
+        # Unchanged paths already have correct data; writing them anyway would
+        # defeat the purpose of delta storage.
+        changed_in_current = [
+            (p, norm_root, d["size_bytes"], d["file_count"], scan_id)
+            for p, d in all_sizes.items()
+            if p not in prev_state
+            or prev_state[p]["size_bytes"] != d["size_bytes"]
+            or prev_state[p]["file_count"] != d["file_count"]
+        ]
+        if changed_in_current:
+            conn.executemany(
+                """INSERT INTO directory_current
+                       (path, root_path, size_bytes, file_count, last_changed_scan_id)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(path) DO UPDATE SET
+                       size_bytes=excluded.size_bytes,
+                       file_count=excluded.file_count,
+                       last_changed_scan_id=excluded.last_changed_scan_id""",
+                changed_in_current
+            )
+        if deleted_paths:
+            placeholders = ",".join("?" * len(deleted_paths))
+            conn.execute(
+                f"DELETE FROM directory_current WHERE root_path=? AND path IN ({placeholders})",
+                [norm_root] + list(deleted_paths)
+            )
+        conn.commit()
 
     # Retention cleanup
     retention = config.get("retention", {})

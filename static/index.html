@@ -4,39 +4,41 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DiskWatch</title>
-
-  <!-- Bootstrap 5 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
-  <!-- Bootstrap Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <!-- Plotly.js -->
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.32.0/plotly.min.js"></script>
-
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
 
-<!-- ===== Sidebar (offcanvas on mobile, fixed on desktop) ===== -->
-<div class="dw-sidebar d-flex flex-column" id="sidebar">
-  <div class="dw-sidebar-brand px-3 py-3 d-flex align-items-center gap-2">
-    <i class="bi bi-hdd-stack-fill text-accent fs-4"></i>
-    <span class="fw-semibold fs-5">DiskWatch</span>
+<!-- ===== Sidebar (fixed, desktop) ===== -->
+<div class="dw-sidebar" id="sidebar">
+  <div class="dw-sidebar-brand">
+    <i class="bi bi-hdd-stack-fill dw-brand-icon"></i>
+    <span class="dw-brand-name">DiskWatch</span>
   </div>
-  <hr class="mx-3 my-0" />
-  <nav class="dw-sidebar-nav flex-grow-1 px-2 py-2" id="sidebarNav">
+
+  <div class="dw-sidebar-status" id="sidebarStatus">
+    <div class="dw-status-dot-row" id="sidebarStatusDot">
+      <div class="dw-status-dot"></div>
+      <span id="sidebarStatusText">Loading…</span>
+    </div>
+    <div class="dw-status-sub" id="sidebarStatusSub"></div>
+  </div>
+
+  <nav class="dw-sidebar-nav" id="sidebarNav">
     <a class="dw-nav-link" href="#/dashboard" data-view="dashboard">
       <i class="bi bi-speedometer2"></i> Dashboard
     </a>
     <a class="dw-nav-link" href="#/browse" data-view="browse">
       <i class="bi bi-folder2-open"></i> Browse
     </a>
-    <a class="dw-nav-link" href="#/anomalies" data-view="anomalies">
-      <i class="bi bi-exclamation-triangle"></i> Anomalies
-      <span class="badge bg-warning text-dark ms-auto dw-badge" id="badgeAnomalies" style="display:none"></span>
+    <a class="dw-nav-link" href="#/growth-spikes" data-view="growth-spikes">
+      <i class="bi bi-graph-up-arrow"></i> Growth Spikes
+      <span class="badge bg-warning text-dark ms-auto dw-badge" id="badgeGrowthSpikes" style="display:none"></span>
     </a>
     <a class="dw-nav-link" href="#/alerts" data-view="alerts">
       <i class="bi bi-bell"></i> Alerts
@@ -49,21 +51,23 @@
       <i class="bi bi-gear"></i> Settings
     </a>
   </nav>
-  <div class="px-2 py-2">
-    <button class="dw-nav-link btn btn-link w-100 text-start text-danger border-0" id="btnLogout">
+
+  <div class="dw-sidebar-footer">
+    <button class="dw-nav-link text-danger" id="btnLogout">
       <i class="bi bi-box-arrow-left"></i> Logout
     </button>
   </div>
 </div>
 
 <!-- ===== Mobile top bar ===== -->
-<div class="dw-mobile-topbar d-flex align-items-center px-3 py-2 d-md-none">
-  <button class="btn btn-sm btn-outline-secondary me-2" id="btnMobileMenu" aria-label="Open menu">
+<div class="dw-mobile-topbar">
+  <button class="dw-btn-icon me-1" id="btnMobileMenu" aria-label="Open menu">
     <i class="bi bi-list fs-5"></i>
   </button>
-  <span class="fw-semibold">DiskWatch</span>
-  <div class="ms-auto d-flex align-items-center gap-2">
-    <button class="btn btn-sm btn-outline-secondary" id="btnThemeMobile" aria-label="Toggle theme">
+  <i class="bi bi-hdd-stack-fill text-accent me-1"></i>
+  <span class="fw-bold">DiskWatch</span>
+  <div class="ms-auto d-flex gap-2">
+    <button class="dw-btn-icon" id="btnThemeMobile">
       <i class="bi bi-sun-fill" id="themeIconMobile"></i>
     </button>
   </div>
@@ -79,70 +83,69 @@
   </div>
   <div class="offcanvas-body p-0">
     <nav class="dw-sidebar-nav px-2 py-2" id="sidebarNavMobile">
-      <a class="dw-nav-link" href="#/dashboard" data-view="dashboard" data-bs-dismiss="offcanvas"><i class="bi bi-speedometer2"></i> Dashboard</a>
-      <a class="dw-nav-link" href="#/browse" data-view="browse" data-bs-dismiss="offcanvas"><i class="bi bi-folder2-open"></i> Browse</a>
-      <a class="dw-nav-link" href="#/anomalies" data-view="anomalies" data-bs-dismiss="offcanvas"><i class="bi bi-exclamation-triangle"></i> Anomalies</a>
-      <a class="dw-nav-link" href="#/alerts" data-view="alerts" data-bs-dismiss="offcanvas"><i class="bi bi-bell"></i> Alerts</a>
-      <a class="dw-nav-link" href="#/scans" data-view="scans" data-bs-dismiss="offcanvas"><i class="bi bi-clock-history"></i> Scan History</a>
-      <a class="dw-nav-link" href="#/settings" data-view="settings" data-bs-dismiss="offcanvas"><i class="bi bi-gear"></i> Settings</a>
+      <a class="dw-nav-link" href="#/dashboard"    data-view="dashboard"    data-bs-dismiss="offcanvas"><i class="bi bi-speedometer2"></i> Dashboard</a>
+      <a class="dw-nav-link" href="#/browse"       data-view="browse"       data-bs-dismiss="offcanvas"><i class="bi bi-folder2-open"></i> Browse</a>
+      <a class="dw-nav-link" href="#/growth-spikes" data-view="growth-spikes" data-bs-dismiss="offcanvas"><i class="bi bi-graph-up-arrow"></i> Growth Spikes</a>
+      <a class="dw-nav-link" href="#/alerts"       data-view="alerts"       data-bs-dismiss="offcanvas"><i class="bi bi-bell"></i> Alerts</a>
+      <a class="dw-nav-link" href="#/scans"        data-view="scans"        data-bs-dismiss="offcanvas"><i class="bi bi-clock-history"></i> Scan History</a>
+      <a class="dw-nav-link" href="#/settings"     data-view="settings"     data-bs-dismiss="offcanvas"><i class="bi bi-gear"></i> Settings</a>
     </nav>
     <div class="px-2 pb-2">
-      <button class="dw-nav-link btn btn-link w-100 text-start text-danger border-0" id="btnLogoutMobile">
+      <button class="dw-nav-link text-danger" id="btnLogoutMobile">
         <i class="bi bi-box-arrow-left"></i> Logout
       </button>
     </div>
   </div>
 </div>
 
-<!-- ===== Main content area ===== -->
+<!-- ===== Main content ===== -->
 <div class="dw-main d-flex flex-column">
   <!-- Top bar (desktop) -->
-  <div class="dw-topbar d-none d-md-flex align-items-center px-4 py-2">
-    <span class="text-muted small me-3">
-      <i class="bi bi-clock me-1"></i>
-      Last scan: <span id="lastScanTime" class="text-body">—</span>
-    </span>
-    <div class="ms-auto d-flex align-items-center gap-2">
-      <button class="btn btn-sm btn-outline-secondary" id="btnTheme" aria-label="Toggle theme">
+  <div class="dw-topbar d-none d-md-flex">
+    <div class="dw-topbar-health ok" id="topbarHealth">
+      <div class="dw-dot"></div>
+      <span id="topbarHealthText">—</span>
+    </div>
+    <span class="dw-topbar-sep">·</span>
+    <span class="dw-topbar-lastscan">Last scan: <span id="lastScanTime">—</span></span>
+    <div class="ms-auto">
+      <button class="dw-btn-icon" id="btnTheme" aria-label="Toggle theme">
         <i class="bi bi-sun-fill" id="themeIcon"></i>
       </button>
     </div>
   </div>
 
   <!-- View container -->
-  <div class="dw-content flex-grow-1 p-3 p-md-4" id="viewContainer">
-    <!-- Views rendered here by app.js -->
-  </div>
+  <div class="dw-content" id="viewContainer"></div>
 </div>
 
-<!-- ===== Login page (shown when not authenticated) ===== -->
+<!-- ===== Login page ===== -->
 <div id="loginPage" class="dw-login-overlay d-none">
-  <div class="dw-login-card card shadow-lg">
-    <div class="card-body p-4">
+  <div class="dw-login-card">
+    <div class="card-body">
       <div class="text-center mb-4">
-        <i class="bi bi-hdd-stack-fill text-accent" style="font-size:2.5rem"></i>
-        <h4 class="mt-2 mb-0 fw-semibold">DiskWatch</h4>
+        <i class="bi bi-hdd-stack-fill text-accent" style="font-size:2.2rem"></i>
+        <h5 class="mt-2 mb-0 fw-bold">DiskWatch</h5>
+        <div class="text-muted small mt-1">Disk Usage Monitor</div>
       </div>
 
-      <!-- Setup form (first run) -->
       <div id="setupForm" class="d-none">
-        <p class="text-muted text-center small mb-3">Set your admin password to get started.</p>
+        <p class="text-muted small text-center mb-3">Set an admin password to get started.</p>
         <div class="mb-3">
-          <label class="form-label small fw-medium">Password</label>
+          <label class="form-label small fw-semibold">Password</label>
           <input type="password" class="form-control" id="setupPassword" placeholder="At least 8 characters" />
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-medium">Confirm password</label>
+          <label class="form-label small fw-semibold">Confirm password</label>
           <input type="password" class="form-control" id="setupPasswordConfirm" placeholder="Repeat password" />
         </div>
         <div id="setupError" class="alert alert-danger py-2 small d-none"></div>
         <button class="btn btn-accent w-100" id="btnSetup">Set Password &amp; Continue</button>
       </div>
 
-      <!-- Login form -->
       <div id="loginForm">
         <div class="mb-3">
-          <label class="form-label small fw-medium">Password</label>
+          <label class="form-label small fw-semibold">Password</label>
           <input type="password" class="form-control" id="loginPassword" placeholder="Admin password" />
         </div>
         <div id="loginError" class="alert alert-danger py-2 small d-none"></div>
@@ -155,9 +158,7 @@
 <!-- ===== Toast container ===== -->
 <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"></div>
 
-<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- App -->
 <script src="/static/app.js"></script>
 </body>
 </html>

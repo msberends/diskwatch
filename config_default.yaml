@@ -52,6 +52,13 @@ ntfy:
   username: ""
   password: ""
 
+# Anomaly detection
+anomalies:
+  growth_spike:
+    min_bytes: 104857600  # 100 MB — minimum absolute growth to flag
+    min_ratio: 0.20       # 20%  — minimum relative growth to flag (both must be met)
+    notify: []            # channels: [email] [ntfy] or both
+
 # Alert rules
 alerts:
   rules:
